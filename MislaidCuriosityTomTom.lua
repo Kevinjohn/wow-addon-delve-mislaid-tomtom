@@ -42,6 +42,7 @@ local DEFAULTS = {
     enabled = true,  -- master switch
     quiet = false,   -- suppress the "spotted" chat line
     counter = true,  -- show the on-screen counter inside Delves
+    counterxp = true, -- ... and on it, the companion experience gained this run as a % of a level
     companion = true, -- after a companion experience gain, say what % it was and how many more to level
     nemesis = true,   -- paint "groups remaining" in white over the Delve tracker's widget icon
     cleardistance = 5, -- yards from a curiosity at which TomTom drops its pin; 0 = keep until looted
@@ -52,11 +53,13 @@ local DEFAULTS = {
 -- Per-character saved variables: the current Delve run, kept so a /reload
 -- mid-run keeps the numbers. known = [guid] = "seen" | "missing" | "gone";
 -- pos = [guid] = { x, y } last known map position; collected = number of
--- "gone"; instanceID is the instance map ID, a sanity check only (copies of
--- the same Delve share it), so a saved run is also ended on any real login:
--- it survives a /reload and nothing else.
+-- "gone"; xp = companion experience gained during the run as a percentage of
+-- a level (gains too small to show as 0.1% are left out, so kill credit does
+-- not creep in); instanceID is the instance map ID, a sanity check only
+-- (copies of the same Delve share it), so a saved run is also ended on any
+-- real login: it survives a /reload and nothing else.
 local CHAR_DEFAULTS = {
-    run = { active = false, instanceID = 0, known = {}, pos = {}, collected = 0 },
+    run = { active = false, instanceID = 0, known = {}, pos = {}, collected = 0, xp = 0 },
 }
 
 local db, cdb
@@ -155,14 +158,26 @@ local function Thousands(n)
     return tostring(n)
 end
 
--- Called on UPDATE_FACTION: if the companion's standing rose, say what the
--- gain was worth as a share of the level and how many more like it reach
--- the next level.
+local RefreshCounter -- defined with the counter below
+
+-- Adds a gain to the run's running total (the counter shows it) when a run
+-- is active. Level-ups count the rest of the old level plus the way into
+-- the new one.
+local function RecordRunGain(pct)
+    if cdb.run.active and pct >= 0.05 then
+        cdb.run.xp = cdb.run.xp + pct
+        RefreshCounter()
+    end
+end
+
+-- Called on UPDATE_FACTION: if the companion's standing rose, add it to the
+-- run and (when the chat line is on) say what the gain was worth as a share
+-- of the level and how many more like it reach the next level.
 local function CheckCompanion()
     local now = CompanionProgress()
     local before = lastCompanion
     lastCompanion = now
-    if not now or not before or not db.companion then
+    if not now or not before then
         return
     end
     local gain = now.standing - before.standing
@@ -170,20 +185,33 @@ local function CheckCompanion()
         return
     end
     if now.level ~= before.level then
+        local rest = before.span and 100 * (before.span - before.into) / before.span or 0
         if now.span then
-            Print(("%s: level up! Level %d, %.1f%% in."):format(now.name, now.level, 100 * now.into / now.span))
+            RecordRunGain(rest + 100 * now.into / now.span)
+            if db.companion then
+                Print(("%s: level up! Level %d, %.1f%% in."):format(now.name, now.level, 100 * now.into / now.span))
+            end
         else
-            Print(("%s: level up! Level %d, the maximum."):format(now.name, now.level))
+            RecordRunGain(rest)
+            if db.companion then
+                Print(("%s: level up! Level %d, the maximum."):format(now.name, now.level))
+            end
         end
         return
     end
     if not now.span then
-        Print(("%s: already at max level %d."):format(now.name, now.level))
+        if db.companion then
+            Print(("%s: already at max level %d."):format(now.name, now.level))
+        end
         return
     end
     local pct = 100 * gain / now.span
     if pct < 0.05 then
         return -- would print as +0.0%: kill credit, walk-overs; not worth a line
+    end
+    RecordRunGain(pct)
+    if not db.companion then
+        return
     end
     local more = math.ceil((now.span - now.into) / gain)
     if more <= 1 then
@@ -462,12 +490,23 @@ local function CountKnown()
     return n
 end
 
-local function RefreshCounter()
+-- "Curiosities 3 / 11", plus "+12.3%" (companion experience gained this run
+-- as a share of a level) when that is turned on.
+local function CounterText()
+    local text = ("Curiosities %d / %d"):format(cdb.run.collected, CountKnown())
+    if not db.counterxp then
+        return text
+    end
+    return ("%s   +%.1f%%"):format(text, cdb.run.xp)
+end
+
+function RefreshCounter()
     if not counterFrame then
         return
     end
     if db.enabled and db.counter and cdb.run.active then
-        counterFrame.text:SetText(("Curiosities %d / %d"):format(cdb.run.collected, CountKnown()))
+        counterFrame.text:SetText(CounterText())
+        counterFrame:SetWidth(math.max(150, (counterFrame.text:GetStringWidth() or 0) + 24))
         counterFrame:Show()
     else
         counterFrame:Hide()
@@ -480,7 +519,7 @@ local function CurrentInstanceID()
 end
 
 local function StartRun()
-    cdb.run = { active = true, instanceID = CurrentInstanceID(), known = {}, pos = {}, collected = 0 }
+    cdb.run = { active = true, instanceID = CurrentInstanceID(), known = {}, pos = {}, collected = 0, xp = 0 }
     lastPresent, named, reached = {}, {}, {}
 end
 
@@ -798,7 +837,8 @@ local function Status()
     end
     Print(("enabled %s, counter %s, quiet %s, pins clear at %d yards, %d waypoint(s) active, %s"):format(
         OnOff(db.enabled), OnOff(db.counter), OnOff(db.quiet), db.cleardistance, #LiveWaypoints(), run))
-    Print(("companion line %s, nemesis number %s; %s"):format(OnOff(db.companion), OnOff(db.nemesis), CompanionStatus()))
+    Print(("companion line %s, xp on counter %s (+%.1f%% this run), nemesis number %s; %s"):format(
+        OnOff(db.companion), OnOff(db.counterxp), cdb.run.xp, OnOff(db.nemesis), CompanionStatus()))
 end
 
 local function Debug()
@@ -865,7 +905,9 @@ local function CounterCommand(arg)
     Status()
 end
 
-local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct companion [on|off], /mct nemesis [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
+local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct xp [on|off], /mct companion [on|off], /mct nemesis [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
+
+local TOGGLES = { companion = "companion", nemesis = "nemesis", xp = "counterxp" }
 
 local function SlashHandler(msg)
     local cmd, arg, value = (msg or ""):lower():match("^%s*(%S*)%s*(%S*)%s*(%S*)")
@@ -875,14 +917,17 @@ local function SlashHandler(msg)
         Status()
     elseif cmd == "counter" then
         CounterCommand(arg)
-    elseif cmd == "companion" or cmd == "nemesis" then
+    elseif TOGGLES[cmd] then
+        local key = TOGGLES[cmd]
         if arg == "on" or arg == "off" then
-            db[cmd] = (arg == "on")
+            db[key] = (arg == "on")
         else
-            db[cmd] = not db[cmd]
+            db[key] = not db[key]
         end
         if cmd == "nemesis" then
             UpdateWidgetOverlays()
+        elseif cmd == "xp" then
+            RefreshCounter()
         end
         Status()
     elseif cmd == "distance" then
@@ -917,6 +962,97 @@ local function SlashHandler(msg)
     end
 end
 
+-- ------------------------------------------------------------------- options
+
+-- Esc > Options > AddOns > Mislaid Curiosity TomTom: one tick box per
+-- setting and a drop-down for the clear distance, all changing live. Proxy
+-- settings read and write our saved table directly, so the panel and /mct
+-- always agree. Missing or changed Blizzard API: the panel is skipped and
+-- /mct still works.
+local OPTIONS = {
+    { key = "enabled", label = "Set TomTom waypoints",
+      tooltip = "Set a TomTom waypoint for every Mislaid Curiosity in a Delve. Off removes the waypoints and hides the counter.",
+      apply = function() Scan() end },
+    { key = "announce", label = "Announce found curiosities",
+      tooltip = "Say in chat when a curiosity is found: where it is and that a waypoint was set." },
+    { key = "companion", label = "Announce companion XP",
+      tooltip = "Say in chat when your companion gains experience: what it was worth as a percentage of the level, and how many more like it reach the next." },
+    { key = "counter", label = "Show the run counter",
+      tooltip = "The movable \"Curiosities collected / known\" box shown inside Delves.",
+      apply = function() RefreshCounter() end },
+    { key = "counterxp", label = "Counter shows companion XP",
+      tooltip = "Adds \"+12.3%\": companion experience gained this run, as a share of a level.",
+      apply = function() RefreshCounter() end },
+    { key = "nemesis", label = "Groups remaining on tracker",
+      tooltip = "Paint the Nemesis Influence \"enemy groups remaining\" number on its Delve tracker icon, so no mouse-over is needed.",
+      apply = function() UpdateWidgetOverlays() end },
+}
+
+-- "announce" is the panel's view of the stored `quiet` flag.
+local function GetOption(key)
+    if key == "announce" then
+        return not db.quiet
+    end
+    return db[key] == true
+end
+
+local function DefaultOption(key)
+    if key == "announce" then
+        return not DEFAULTS.quiet
+    end
+    return DEFAULTS[key] == true
+end
+
+local function SetOption(key, value)
+    if key == "announce" then
+        db.quiet = not value
+    else
+        db[key] = value and true or false
+    end
+end
+
+local function RegisterOptions()
+    local category = Settings.RegisterVerticalLayoutCategory(ADDON_TITLE)
+    for _, o in ipairs(OPTIONS) do
+        local setting = Settings.RegisterProxySetting(category, "MislaidCuriosityTomTom_" .. o.key,
+            Settings.VarType.Boolean, o.label, DefaultOption(o.key) and Settings.Default.True or Settings.Default.False,
+            function() return GetOption(o.key) end,
+            function(value)
+                SetOption(o.key, value)
+                if o.apply then
+                    o.apply()
+                end
+            end)
+        Settings.CreateCheckbox(category, setting, o.tooltip)
+    end
+    local distance = Settings.RegisterProxySetting(category, "MislaidCuriosityTomTom_cleardistance",
+        Settings.VarType.Number, "Pin clear distance", DEFAULTS.cleardistance,
+        function() return db.cleardistance end,
+        function(value) db.cleardistance = math.floor(value) end)
+    local function DistanceChoices()
+        local container = Settings.CreateControlTextContainer()
+        container:Add(0, "Off (keep until looted)")
+        container:Add(5, "5 yards")
+        container:Add(10, "10 yards")
+        return container:GetData()
+    end
+    Settings.CreateDropdown(category, distance, DistanceChoices,
+        "TomTom drops a curiosity's pin when you get this close. Off keeps the pin until the curiosity is looted. Applies to new pins; /mct distance <yards> allows any number.")
+    Settings.RegisterAddOnCategory(category)
+end
+
+local function SetupOptions()
+    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterProxySetting
+            and Settings.CreateCheckbox and Settings.CreateDropdown and Settings.CreateControlTextContainer
+            and Settings.RegisterAddOnCategory and Settings.VarType and Settings.Default) then
+        return
+    end
+    local ok, err = pcall(RegisterOptions)
+    if not ok then
+        Print("options panel unavailable (" .. tostring(err) .. "); /mct still works.")
+    end
+end
+
 -- -------------------------------------------------------------------- events
 
 local function CopyDefaults(target, defaults)
@@ -946,6 +1082,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2)
         cdb = MislaidCuriosityTomTomCharDB
         CopyDefaults(cdb, CHAR_DEFAULTS)
         counterFrame = CreateCounter()
+        SetupOptions()
         self:UnregisterEvent("ADDON_LOADED")
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA")

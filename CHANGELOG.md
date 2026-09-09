@@ -23,8 +23,13 @@ All notable changes to this project are documented here, following
   companion stands now.
 - The Delve tracker's Nemesis Influence icon shows its "enemy groups
   remaining" count on the icon itself, no mouse-over needed.
-- `/mct` slash command: on/off, `counter`, `companion`, `nemesis`, `distance`,
-  `quiet`, `clear`, `scan`, `debug`, `id`.
+- The counter also shows the companion experience gained this run as a share
+  of a level (`/mct xp` to hide it).
+- Options panel under Esc > Options > AddOns: tick boxes for waypoints, the
+  two chat lines, the counter, the counter's experience total and the tracker
+  number, plus a drop-down for the pin clear distance. All apply live.
+- `/mct` slash command: on/off, `counter`, `xp`, `companion`, `nemesis`,
+  `distance`, `quiet`, `clear`, `scan`, `debug`, `id`.
 - TomTom is an optional dependency: without it the addon loads, says so once
   at login, and still counts.
 - Release scaffolding: MIT licence, `.pkgmeta` for the BigWigs packager,

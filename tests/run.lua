@@ -27,7 +27,10 @@
 --     it, updated on widget changes, hidden outside Delves or when off,
 --   * a rise in the companion's friendship standing prints the gain as a
 --     share of the level, handles level-up and max level, and stays quiet
---     for gains under 0.05%, when turned off, or without companion data.
+--     for gains under 0.05%, when turned off, or without companion data;
+--     the shown gains add up on the counter for the run,
+--   * the Blizzard Settings panel gets one tick box per setting and a
+--     distance drop-down, all live, and its absence is harmless.
 --
 -- Run from the repo root:  luajit tests/run.lua   (any Lua >= 5.1 works)
 
@@ -183,12 +186,39 @@ local function liveCount()
 	for _ in pairs(tomtom.byKey) do n = n + 1 end
 	return n
 end
+-- Blizzard Settings panel stub: records proxy settings by variable name so a
+-- test can flip a box (setValue) and read what the panel would show (getValue).
+local settings = { proxies = {}, checkboxes = 0, dropdowns = 0, choices = nil, categories = {} }
+_G.Settings = {
+	VarType = { Boolean = "boolean", Number = "number", String = "string" },
+	Default = { True = true, False = false },
+	RegisterVerticalLayoutCategory = function(name) local c = { name = name }; settings.categories[#settings.categories + 1] = c; return c end,
+	RegisterProxySetting = function(category, variable, varType, name, default, getValue, setValue)
+		assert(category and variable and varType and name and getValue and setValue, "proxy setting arguments")
+		assert(settings.proxies[variable] == nil, "duplicate setting variable " .. variable)
+		local p = { name = name, varType = varType, default = default, get = getValue, set = setValue }
+		settings.proxies[variable] = p
+		return p
+	end,
+	CreateCheckbox = function(_, setting) assert(setting.varType == "boolean"); settings.checkboxes = settings.checkboxes + 1 end,
+	CreateControlTextContainer = function()
+		return { data = {}, Add = function(self, value, label) self.data[#self.data + 1] = { value = value, label = label } end,
+			GetData = function(self) return self.data end }
+	end,
+	CreateDropdown = function(_, setting, options)
+		assert(setting.varType == "number" and type(options) == "function")
+		settings.dropdowns = settings.dropdowns + 1
+		settings.choices = options()
+	end,
+	RegisterAddOnCategory = function(c) c.registered = true end,
+}
 
 -- ---------------------------------------------------------------- load addon
 local ns, frame, tracked, foreign, counter, db, cdb
 local function load()
 	-- A real /reload drops TomTom's non-persistent waypoints and the arrow.
 	tomtom.byKey, tomtom.arrow = {}, nil
+	settings.proxies, settings.checkboxes, settings.dropdowns = {}, 0, 0
 	ns = {}
 	assert(loadfile("MislaidCuriosityTomTom.lua"))("MislaidCuriosityTomTom", ns)
 	frame = ns.frame
@@ -197,7 +227,10 @@ local function load()
 	db, cdb = _G.MislaidCuriosityTomTomDB, _G.MislaidCuriosityTomTomCharDB
 end
 local function fire(event, ...) frame.handler(frame, event, ...) end
-local function text() return tostring(counter.text.textValue) end
+-- Counter text up to the companion suffix ("Curiosities 3 / 11"); full()
+-- is the whole line.
+local function full() return tostring(counter.text.textValue) end
+local function text() return (full():gsub("   .*$", "")) end
 
 do
 	local probe = {}
@@ -563,6 +596,10 @@ companion.standing = companion.standing + 4500
 fire("UPDATE_FACTION")
 check(chat[#chat] == "|cff33ff99Mislaid Curiosity TomTom:|r Valeera: +10.1%, 8 more to level up.",
 	"gain printed as a percentage with the count to level (got " .. chat[#chat] .. ")")
+check(full() == text() .. "   +10.1%", "counter shows the run's companion gain, no name (got " .. full() .. ")")
+ns.SlashHandler("xp off")
+check(db.counterxp == false and full() == text(), "/mct xp off drops the suffix (got " .. full() .. ")")
+ns.SlashHandler("xp on")
 companion.standing = companion.standing + 18 -- kill credit: would round to +0.0%
 before = #chat
 fire("UPDATE_FACTION")
@@ -594,6 +631,76 @@ check(#chat == before, "companion line suppressed when off")
 ns.SlashHandler("companion on")
 ns.SlashHandler("")
 check(chat[#chat - 1]:find("Valeera is level 15, the maximum.", 1, true) ~= nil, "status shows companion progress")
+check(cdb.run.xp > 190 and cdb.run.xp < 191 and full():find("   +190.5%", 1, true) ~= nil,
+	"run total sums every shown gain, level-ups included (got " .. full() .. ")")
+check(chat[#chat - 1]:find("xp on counter on (+190.5% this run)", 1, true) ~= nil, "status shows the run total")
+companion.standing = 500300
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before + 1 and cdb.run.xp < 191, "gains at max level are reported but add nothing")
+ns.SlashHandler("companion off")
+db.counterxp = true
+ns.SlashHandler("counter reset")
+check(cdb.run.xp == 0 and full():find("   +0.0%", 1, true) ~= nil, "counter reset clears the run total")
+ns.SlashHandler("companion on")
+
+-- Options panel: one tick box per setting, a slider for the distance, all
+-- reading and writing the saved table live.
+local function proxy(key) return settings.proxies["MislaidCuriosityTomTom_" .. key] end
+check(settings.categories[#settings.categories].name == "Mislaid Curiosity TomTom"
+	and settings.categories[#settings.categories].registered, "options category registered under AddOns")
+check(settings.checkboxes == 6 and settings.dropdowns == 1, "six tick boxes and one drop-down")
+check(#settings.choices == 3 and settings.choices[1].value == 0 and settings.choices[2].value == 5
+	and settings.choices[3].value == 10 and settings.choices[1].label:find("Off", 1, true) == 1,
+	"drop-down offers off, 5 and 10 yards")
+for _, key in ipairs({ "enabled", "companion", "counter", "counterxp", "nemesis" }) do
+	check(proxy(key) and proxy(key).get() == true, "tick box '" .. key .. "' present and on")
+end
+check(db.quiet == true and proxy("announce").get() == false, "announce box mirrors quiet (still on from above)")
+ns.SlashHandler("quiet off")
+check(proxy("announce").get() == true, "/mct quiet off ticks the announce box")
+proxy("announce").set(false)
+check(db.quiet == true and proxy("announce").get() == false, "unticking the chat announcement sets quiet")
+ns.SlashHandler("quiet off")
+check(proxy("announce").get() == true, "/mct quiet off re-ticks the box")
+proxy("companion").set(false)
+companion.standing = 500400
+before = #chat
+fire("UPDATE_FACTION")
+check(db.companion == false and #chat == before, "unticking the companion line silences it")
+proxy("companion").set(true)
+proxy("counterxp").set(false)
+check(db.counterxp == false and full() == text(), "unticking counter XP drops the suffix live")
+proxy("counterxp").set(true)
+check(full():find("   +", 1, true) ~= nil, "ticking it back restores the suffix")
+proxy("counter").set(false)
+check(db.counter == false and counter.shown == false, "unticking the counter hides it live")
+proxy("counter").set(true)
+check(counter.shown == true, "ticking the counter shows it again")
+proxy("enabled").set(false)
+check(db.enabled == false and counter.shown == false and liveCount() == 0, "unticking the addon clears waypoints and hides the counter")
+proxy("enabled").set(true)
+check(counter.shown == true, "ticking the addon back restores the counter")
+proxy("nemesis").set(false)
+check(db.nemesis == false and overlays[nemesisWidget].shown == false, "unticking nemesis hides the number")
+proxy("nemesis").set(true)
+check(proxy("cleardistance").get() == 5, "drop-down reads the clear distance")
+proxy("cleardistance").set(10)
+check(db.cleardistance == 10, "drop-down writes the chosen distance")
+ns.SlashHandler("distance 5")
+check(proxy("cleardistance").get() == 5, "/mct distance updates the drop-down's value")
+do
+	local saved = _G.Settings
+	_G.Settings = nil
+	before = #chat
+	load()
+	check(#chat == before and db.enabled == true, "no Settings API: loads quietly, /mct still works")
+	_G.Settings = saved
+	load()
+	check(proxy("enabled") ~= nil, "panel registered again after a /reload")
+	world.difficultyID = 208
+	fire("PLAYER_ENTERING_WORLD")
+end
 _G.C_DelvesUI = nil
 companion.standing = 500300
 fire("UPDATE_FACTION")

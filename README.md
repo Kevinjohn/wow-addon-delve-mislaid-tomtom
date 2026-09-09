@@ -55,12 +55,31 @@ the icon in white instead, so you never need to hover.
 
 A small box near the top of the screen reads, for example:
 
-> **Curiosities 2 / 5**
+> **Curiosities 2 / 5   +18.4%**
 
-That is 2 collected out of 5 the game has revealed so far this run. Drag it
+That is 2 collected out of 5 the game has revealed so far this run, and the
+companion experience gained during the run as a share of a level (the same
+gains the chat line reports, so kill credit stays out of it). Drag it
 wherever you like; the position is remembered. It appears when you enter a
 Delve, survives a `/reload`, is kept per character, and starts over on your
 next run or on a fresh login.
+
+---
+
+## Options
+
+Esc > Options > AddOns > **Mislaid Curiosity TomTom**. Every setting is a tick
+box, and each one takes effect immediately:
+
+- Set TomTom waypoints
+- Announce found curiosities
+- Announce companion XP
+- Show the run counter
+- Counter shows companion XP
+- Groups remaining on tracker
+- Pin clear distance: off, 5 yards or 10 yards (drop-down)
+
+Hover a box for what it does. The same settings are available from the `/mct` command below.
 
 ---
 
@@ -86,6 +105,7 @@ Type **`/mct`** (or `/mislaidcuriosity`) in chat.
 | `/mct` | Show current settings and how many waypoints are active. |
 | `/mct on` / `/mct off` | Turn the addon on or off. Off removes its waypoints and hides the counter. |
 | `/mct counter [on\|off]` | Show or hide the counter. `/mct counter reset` restarts this run's numbers. |
+| `/mct xp [on\|off]` | Show or hide the companion experience total on the counter. |
 | `/mct companion [on\|off]` | Show or hide the "+x%, n more to level up" line after companion experience. |
 | `/mct nemesis [on\|off]` | Show or hide the "groups remaining" number on the tracker icon. |
 | `/mct distance <yards>` | How close you get before TomTom drops the pin. Default 5. `0` keeps the pin until the curiosity is looted. |

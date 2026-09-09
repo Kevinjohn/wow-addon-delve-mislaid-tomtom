@@ -27,6 +27,7 @@ read_globals = {
 	"UIWidgetManager",
 	"UIParent",
 	"DEFAULT_CHAT_FRAME",
+	"Settings",
 
 	-- Instance / map / vignette / timer APIs
 	"GetInstanceInfo",
