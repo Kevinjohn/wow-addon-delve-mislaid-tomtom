@@ -18,8 +18,13 @@ All notable changes to this project are documented here, following
   by the game, or vanished while you were within about 40 yards (or after
   your pin on it had cleared); out-of-range curiosities stay known and keep
   their waypoint.
-- `/mct` slash command: on/off, `counter`, `distance`, `quiet`, `clear`,
-  `scan`, `debug`, `id`.
+- After a companion experience gain, one chat line: the gain as a percentage of
+  the level, how many more like it reach the next level, and where the
+  companion stands now.
+- The Delve tracker's Nemesis Influence icon shows its "enemy groups
+  remaining" count on the icon itself, no mouse-over needed.
+- `/mct` slash command: on/off, `counter`, `companion`, `nemesis`, `distance`,
+  `quiet`, `clear`, `scan`, `debug`, `id`.
 - TomTom is an optional dependency: without it the addon loads, says so once
   at login, and still counts.
 - Release scaffolding: MIT licence, `.pkgmeta` for the BigWigs packager,

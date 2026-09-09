@@ -41,6 +41,18 @@ minimap, so the waypoint normally appears before you can see the object. The
 addon recognises them by the game's own marker ID, so it never marks bosses,
 chests, or anything else.
 
+When your companion gains experience, the game says how many points. Right
+after it, this addon says what that was worth and how many more like it
+reach the next level:
+
+> **Mislaid Curiosity TomTom:** Valeera: +10.1%, 8 more to level up.
+
+Tiny gains that would show as +0.0% (kill credit, walk-overs) print nothing.
+
+The Delve tracker's affix icons only tell you their numbers on mouse-over.
+The Nemesis Influence icon's "enemy groups remaining" count is painted over
+the icon in white instead, so you never need to hover.
+
 A small box near the top of the screen reads, for example:
 
 > **Curiosities 2 / 5**
@@ -74,6 +86,8 @@ Type **`/mct`** (or `/mislaidcuriosity`) in chat.
 | `/mct` | Show current settings and how many waypoints are active. |
 | `/mct on` / `/mct off` | Turn the addon on or off. Off removes its waypoints and hides the counter. |
 | `/mct counter [on\|off]` | Show or hide the counter. `/mct counter reset` restarts this run's numbers. |
+| `/mct companion [on\|off]` | Show or hide the "+x%, n more to level up" line after companion experience. |
+| `/mct nemesis [on\|off]` | Show or hide the "groups remaining" number on the tracker icon. |
 | `/mct distance <yards>` | How close you get before TomTom drops the pin. Default 5. `0` keeps the pin until the curiosity is looted. |
 | `/mct quiet [on\|off]` | Hide the "spotted" chat line. |
 | `/mct clear` | Remove every waypoint the addon has set right now. |
@@ -107,6 +121,11 @@ about 40 yards of it (or after your pin on it had already cleared). One that
 simply drops out of range stays known and keeps its waypoint. Party members'
 pickups count only if you were nearby; one looted while far from you keeps
 its waypoint until the run ends or you `/mct clear`.
+
+**Where does the companion percentage come from?**
+The same place the game's own companion window reads it: your companion's
+level is a friendship reputation, and the addon reads the current standing
+and the level's thresholds. It works anywhere, not just in Delves.
 
 **Will it move my TomTom arrow?**
 Only if the arrow was idle. A waypoint you set yourself is never overridden.

@@ -24,6 +24,7 @@ globals = {
 read_globals = {
 	-- Frames and chat
 	"CreateFrame",
+	"UIWidgetManager",
 	"UIParent",
 	"DEFAULT_CHAT_FRAME",
 
@@ -33,6 +34,10 @@ read_globals = {
 	"C_Map",
 	"C_VignetteInfo",
 	"C_Timer",
+	"C_DelvesUI",
+	"C_Spell",
+	"C_GossipInfo",
+	"BreakUpLargeNumbers",
 	"Enum",
 
 	-- Provided by the TomTom addon (an optional dependency in the .toc)

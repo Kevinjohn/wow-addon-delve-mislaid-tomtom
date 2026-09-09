@@ -22,7 +22,12 @@
 --   * `/mct id add|remove` extends and shrinks the ID set,
 --   * the run lives in per-character saved variables, is tied to one
 --     instance, and resets on a new one,
---   * without TomTom it loads, warns once at login, and only counts.
+--   * without TomTom it loads, warns once at login, and only counts,
+--   * a Delve tracker widget whose tooltip says "n / m" gets n painted over
+--     it, updated on widget changes, hidden outside Delves or when off,
+--   * a rise in the companion's friendship standing prints the gain as a
+--     share of the level, handles level-up and max level, and stays quiet
+--     for gains under 0.05%, when turned off, or without companion data.
 --
 -- Run from the repo root:  luajit tests/run.lua   (any Lua >= 5.1 works)
 
@@ -67,6 +72,21 @@ _G.C_Map = {
 	end,
 }
 _G.C_Timer = { After = function(_, fn) fn() end } -- run scheduled scans immediately
+-- Companion friendship reputation (Blizzard_DelvesCompanionConfiguration path).
+local companion = { standing = 26200, reactionThreshold = 22000, nextThreshold = 66500, level = 7 }
+_G.C_DelvesUI = { GetFactionForCompanion = function() return 2640 end }
+_G.C_GossipInfo = {
+	GetFriendshipReputationRanks = function() return { currentLevel = companion.level, maxLevel = 15 } end,
+	GetFriendshipReputation = function()
+		return { name = "Valeera Sanguinar", standing = companion.standing,
+			reactionThreshold = companion.reactionThreshold, nextThreshold = companion.nextThreshold }
+	end,
+}
+_G.BreakUpLargeNumbers = function(n)
+	local s = tostring(n)
+	repeat s, k = s:gsub("^(%d+)(%d%d%d)", "%1,%2") until k == 0
+	return s
+end
 _G.SlashCmdList = {}
 _G.C_VignetteInfo = {
 	GetVignettes = function()
@@ -100,6 +120,41 @@ local function widget()
 end
 _G.UIParent = widget()
 _G.CreateFrame = function() return widget() end
+-- Frames the client would enumerate: a Nemesis widget whose data comes from
+-- the widget manager, a widget whose tooltip sits on a child frame, a widget
+-- without a ratio, and a plain frame.
+local NEMESIS_TIP = "Nemesis Influence\nThe Nemesis's allies are wandering about the delve.\n\nEnemy groups remaining: 1 / 4"
+local nemesisWidget = widget(); nemesisWidget.widgetID = 6001; nemesisWidget.widgetType = 6
+local childWidget = widget(); childWidget.widgetID = 6003; childWidget.widgetType = 6
+local childIcon = widget(); childIcon.tooltip = "Something else: 2 / 3"
+function childWidget:GetChildren() return childIcon end
+local otherWidget = widget(); otherWidget.widgetID = 6002; otherWidget.widgetType = 6
+-- The Delves header: affix spells with empty tooltips whose live description
+-- carries the number, and icon children keyed by spellID.
+local headerWidget = widget(); headerWidget.widgetID = 6183; headerWidget.widgetType = 29
+local iconA = widget(); iconA.spellID = 1001
+local iconB = widget(); iconB.spellID = 1002
+function headerWidget:GetChildren() return iconA, iconB end
+local descriptions = { [1001] = "Curiosity buff.", [1002] = "The Nemesis's allies are wandering.\n\nEnemy groups remaining: 3 / 4" }
+_G.C_Spell = { GetSpellDescription = function(id) return descriptions[id] end }
+local plain = widget()
+-- Widget containers as the widget manager registers them: one keyed by the
+-- container frame, one nested under a set ID, plus a stray non-container.
+local containerA = widget(); containerA.widgetFrames = { [6001] = nemesisWidget, [6002] = otherWidget }
+local containerB = widget(); containerB.widgetFrames = { [6003] = childWidget, [6183] = headerWidget }
+_G.UIWidgetManager = { registeredWidgetContainers = { [containerA] = true, [42] = { [containerB] = true }, [plain] = true },
+widgetVisTypeInfo = {
+	[6] = { visInfoDataFunction = function(id)
+		if id == 6001 then return { spellInfo = { tooltip = NEMESIS_TIP, name = "Nemesis Influence" } } end
+		if id == 6002 then return { spellInfo = { tooltip = "Companion buff" } } end
+		return nil
+	end },
+	[29] = { visInfoDataFunction = function(id)
+		if id == 6183 then return { headerText = "Gnarldor Isle", tooltip = "", tierText = "11",
+			spells = { { spellID = 1001, tooltip = "" }, { spellID = 1002, tooltip = "" } } } end
+		return nil
+	end },
+} }
 
 -- TomTom stub: keyed like the real one (map/x/y/title), returns the existing
 -- uid on a duplicate, records the opts, and models the crazy arrow.
@@ -390,7 +445,7 @@ fire("ZONE_CHANGED_NEW_AREA")
 check(liveCount() == 0 and next(tracked) == nil and counter.shown == false and cdb.run.active == false,
 	"leaving the Delve clears waypoints, hides the counter, ends the run")
 ns.SlashHandler("")
-check(chat[#chat - 1]:find("last run:", 1, true) ~= nil, "status calls a finished run the last run")
+check(chat[#chat - 2]:find("last run:", 1, true) ~= nil, "status calls a finished run the last run")
 world.difficultyID = 208
 world.instanceID = 200
 fire("PLAYER_ENTERING_WORLD")
@@ -421,7 +476,7 @@ end
 check(sawTracked, "debug lists the vignette ID and tracking")
 ns.SlashHandler("")
 check(chat[#chat]:find("usage:", 1, true) ~= nil, "bare /mct prints usage")
-check(chat[#chat - 1]:find("1 waypoint(s) active", 1, true) ~= nil, "status counts live waypoints")
+check(chat[#chat - 2]:find("1 waypoint(s) active", 1, true) ~= nil, "status counts live waypoints")
 
 -- TomTom missing: one warning at login, status says so, counting continues.
 ns.SlashHandler("clear")
@@ -454,12 +509,96 @@ check(tracked[twinA] == pinned and tomtom.adds == addsBefore, "pin dropped at cl
 ns.SlashHandler("distance 12")
 check(db.cleardistance == 12, "/mct distance persists")
 ns.SlashHandler("distance x")
-check(db.cleardistance == 12 and chat[#chat - 1]:find("usage: /mct distance", 1, true) ~= nil, "bad distance is rejected")
+check(db.cleardistance == 12 and chat[#chat - 2]:find("usage: /mct distance", 1, true) ~= nil, "bad distance is rejected")
 ns.SlashHandler("distance 0")
 ns.SlashHandler("clear")
 fire("VIGNETTES_UPDATED")
 check(tomtom.lastOpts.cleardistance == 0 and tracked[twinA], "new pins use the new distance")
 ns.SlashHandler("distance 5")
+
+-- Nemesis "groups remaining" overlay.
+local probe2 = {}
+assert(loadfile("MislaidCuriosityTomTom.lua"))("MislaidCuriosityTomTom", probe2)
+check(probe2.TooltipRemaining("Enemy groups remaining: 1 / 4") == "1"
+	and probe2.TooltipRemaining("3/12 done, 0 / 4 left") == "0"
+	and probe2.TooltipRemaining("no ratio here") == nil and probe2.TooltipRemaining(nil) == nil,
+	"tooltip ratio parsing takes the last n / m")
+world.difficultyID = 208
+fire("UPDATE_UI_WIDGET")
+local overlays = ns.GetOverlays()
+check(overlays[nemesisWidget] and overlays[nemesisWidget].shown and overlays[nemesisWidget].textValue == "1",
+	"nemesis widget gets its remaining count painted from widget-manager data")
+check(overlays[childWidget] and overlays[childWidget].textValue == "2", "tooltip on a child frame is found")
+check(overlays[iconB] and overlays[iconB].textValue == "3" and overlays[iconA] == nil and overlays[headerWidget] == nil,
+	"Delves header: number from the spell description, painted on that spell's icon")
+descriptions[1002] = descriptions[1002]:gsub("3 / 4", "2 / 4")
+fire("UPDATE_UI_WIDGET")
+check(overlays[iconB].textValue == "2", "icon overlay follows the live description")
+check(overlays[otherWidget] == nil and overlays[plain] == nil, "other frames untouched")
+NEMESIS_TIP = NEMESIS_TIP:gsub("1 / 4", "0 / 4")
+fire("UPDATE_UI_WIDGET")
+check(overlays[nemesisWidget].textValue == "0", "overlay follows the tooltip")
+ns.SlashHandler("debug")
+local sawWidget = false
+for i = math.max(1, #chat - 30), #chat do
+	if chat[i]:find("widget 6001", 1, true) and chat[i]:find("remaining 0", 1, true) then sawWidget = true end
+end
+check(sawWidget, "debug lists widgets with their remaining count")
+ns.SlashHandler("nemesis off")
+check(db.nemesis == false and overlays[nemesisWidget].shown == false, "/mct nemesis off hides it")
+ns.SlashHandler("nemesis on")
+check(overlays[nemesisWidget].shown == true, "/mct nemesis on shows it again")
+world.difficultyID = 0
+fire("ZONE_CHANGED_NEW_AREA")
+check(overlays[nemesisWidget].shown == false, "hidden outside a Delve")
+world.difficultyID = 208
+fire("PLAYER_ENTERING_WORLD")
+
+-- Companion experience line.
+fire("PLAYER_ENTERING_WORLD") -- primes the last-known standing
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before, "unchanged standing prints nothing")
+companion.standing = companion.standing + 4500
+fire("UPDATE_FACTION")
+check(chat[#chat] == "|cff33ff99Mislaid Curiosity TomTom:|r Valeera: +10.1%, 8 more to level up.",
+	"gain printed as a percentage with the count to level (got " .. chat[#chat] .. ")")
+companion.standing = companion.standing + 18 -- kill credit: would round to +0.0%
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before, "gains that round to 0.0% print nothing")
+companion.standing = 63000 -- 3,500 short of the next level
+fire("UPDATE_FACTION")
+companion.standing = 65000 -- +2,000: one more of those levels up
+fire("UPDATE_FACTION")
+check(chat[#chat]:find("Valeera: +4.5%, one more levels up.", 1, true) ~= nil, "singular wording near the level (got " .. chat[#chat] .. ")")
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before, "same standing again prints nothing")
+companion.standing = 67000
+companion.reactionThreshold, companion.nextThreshold, companion.level = 66500, 111000, 8
+fire("UPDATE_FACTION")
+check(chat[#chat]:find("Valeera: level up! Level 8, 1.1% in.", 1, true) ~= nil, "level up reported (got " .. chat[#chat] .. ")")
+companion.standing, companion.reactionThreshold, companion.nextThreshold, companion.level = 500000, 480000, nil, 15
+fire("UPDATE_FACTION")
+check(chat[#chat]:find("level up! Level 15, the maximum.", 1, true) ~= nil, "max level reached (got " .. chat[#chat] .. ")")
+companion.standing = 500100
+fire("UPDATE_FACTION")
+check(chat[#chat]:find("already at max level 15", 1, true) ~= nil, "gain at max level")
+ns.SlashHandler("companion off")
+check(db.companion == false, "/mct companion off persists")
+companion.standing = 500200
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before, "companion line suppressed when off")
+ns.SlashHandler("companion on")
+ns.SlashHandler("")
+check(chat[#chat - 1]:find("Valeera is level 15, the maximum.", 1, true) ~= nil, "status shows companion progress")
+_G.C_DelvesUI = nil
+companion.standing = 500300
+fire("UPDATE_FACTION")
+ns.SlashHandler("")
+check(chat[#chat - 1]:find("companion progress unavailable", 1, true) ~= nil, "no companion API: status says so, no error")
 
 io.write(("%d checks, %d failures\n"):format(checks, #failures))
 if #failures > 0 then
