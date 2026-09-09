@@ -1,0 +1,75 @@
+# Build and publish a release whenever a version tag is pushed.
+#
+# Publish-only by design: this workflow does NOT run luacheck or tests. Testing
+# stays local — run `sh scripts/check.sh` before pushing a tag. Keep it that way;
+# don't add a test job here.
+#
+# Runs the BigWigs packager (the same tool as `scripts/release.sh`, just in CI).
+# On a tag push it:
+#   - builds the MislaidCuriosityTomTom zip from the repo-root layout,
+#   - stamps @project-version@ in the .toc with the tag,
+#   - creates a GitHub Release and attaches the zip (uses the built-in token),
+#   - uploads to CurseForge / Wago — but ONLY once those are set up.
+#
+# Until then it is safe to leave merged: the packager auto-skips a service when
+# the matching id is absent from the .toc OR its token secret is unset. So with
+# X-Curse-Project-ID / X-Wago-ID still commented out in the .toc, CI just builds
+# the zip and the GitHub Release; CurseForge/Wago uploads are skipped, not errored.
+#
+# To turn on CurseForge / Wago later:
+#   1. Create the projects, then uncomment + fill X-Curse-Project-ID and
+#      X-Wago-ID in MislaidCuriosityTomTom.toc.
+#   2. Add repo secrets (Settings -> Secrets and variables -> Actions):
+#        CF_API_TOKEN    - CurseForge API token  (https://authors.curseforge.com/account/api-tokens)
+#        WAGO_API_TOKEN  - Wago API token        (https://addons.wago.io/account/apikeys)
+#      GITHUB_TOKEN is provided automatically; no secret to add for the Release.
+#
+# Docs: https://github.com/BigWigsMods/packager
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # needed for the packager to create the GitHub Release
+
+jobs:
+  release:
+    name: Package and release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone project
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history + tags so the packager can read the version
+
+      - name: Trim changelog header for published notes
+        # The packager ships CHANGELOG.md verbatim as the GitHub Release body,
+        # the CurseForge changelog, and the in-zip changelog. Drop the repo-file
+        # header (the "# Changelog" title, its tagline, and the dev-notes HTML
+        # comment) so the published notes start at the first version heading and
+        # show the version list only. Keeps full history; just removes the
+        # boilerplate. Runs on the CI checkout, so the committed CHANGELOG.md
+        # keeps its header for anyone browsing the repo. The rule — "everything
+        # from the first '## ' heading onward" — is independent of the exact
+        # title/tagline wording, so edits to those can't break it.
+        run: |
+          awk '/^## / { keep = 1 } keep' CHANGELOG.md > CHANGELOG.trimmed
+          mv CHANGELOG.trimmed CHANGELOG.md
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        env:
+          # packager@v2's release.sh reads the CurseForge token from CF_API_KEY.
+          # CF_API_TOKEN is only the name on the (unreleased) master branch, so
+          # passing just CF_API_TOKEN makes v2 silently skip the CurseForge upload
+          # (no error — it just sees an empty token). Pass the same secret under
+          # both names: works on v2 now, and survives a later bump to a version
+          # that switches to CF_API_TOKEN. WAGO_API_TOKEN / GITHUB_OAUTH already
+          # match v2. Missing token or id => that service is skipped.
+          CF_API_KEY: ${{ secrets.CF_API_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

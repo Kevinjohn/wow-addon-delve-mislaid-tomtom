@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in the addon is wrong or broken
+labels: [bug]
+body:
+  - type: input
+    id: addon-version
+    attributes:
+      label: Addon version
+      description: Shown on the in-game AddOns list, or on the Releases page.
+      placeholder: e.g. 0.9.0
+    validations:
+      required: true
+  - type: input
+    id: wow-build
+    attributes:
+      label: WoW version / build
+      description: "Run /run print(GetBuildInfo()) in-game, or read it from the game menu."
+      placeholder: e.g. 12.1.0 (Retail)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Enter a Delve
+        2. Walk until a Mislaid Curiosity is announced
+        3. ...
+    validations:
+      required: false
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text
+      description: Turn on Lua errors with /console scriptErrors 1 (or use BugSack), then paste any error here.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: For a missing or misplaced waypoint, a shot of the minimap plus the output of `/mct debug` helps a lot. Drag an image in here.
+    validations:
+      required: false

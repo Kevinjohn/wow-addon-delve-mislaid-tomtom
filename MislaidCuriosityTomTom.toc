@@ -1,0 +1,18 @@
+## Interface: 120100
+## Title: Mislaid Curiosity TomTom
+## Notes: In a Delve, sets a TomTom waypoint for each Mislaid Curiosity as soon as your client knows where it is.
+## Author: Kevinjohn Gallagher
+## Version: @project-version@
+## X-License: MIT
+## X-Website: https://github.com/Kevinjohn/wow-addon-delve-mislaid-tomtom
+## OptionalDeps: TomTom
+## SavedVariables: MislaidCuriosityTomTomDB
+## SavedVariablesPerCharacter: MislaidCuriosityTomTomCharDB
+## IconTexture: Interface\Icons\INV_Misc_Bag_10
+
+# To publish to CurseForge / Wago later, create the projects then uncomment
+# and fill these (the packager reads them to upload the build):
+# ## X-Curse-Project-ID: 000000
+# ## X-Wago-ID: 000000
+
+MislaidCuriosityTomTom.lua
