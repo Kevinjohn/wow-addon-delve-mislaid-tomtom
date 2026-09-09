@@ -42,8 +42,9 @@ local DEFAULTS = {
     enabled = true,  -- master switch
     quiet = false,   -- suppress the "spotted" chat line
     counter = true,  -- show the on-screen counter inside Delves
-    counterxp = true, -- ... and on it, the companion experience gained this run as a % of a level
+    counterxp = true, -- ... and on it, this run's companion and Delver's Journey gains as a % of a level
     companion = true, -- after a companion experience gain, say what % it was and how many more to level
+    journey = true,   -- the same for Delver's Journey progress
     nemesis = true,   -- paint "groups remaining" in white over the Delve tracker's widget icon
     cleardistance = 5, -- yards from a curiosity at which TomTom drops its pin; 0 = keep until looted
     ids = {},        -- extra vignette IDs, [id] = true
@@ -53,13 +54,13 @@ local DEFAULTS = {
 -- Per-character saved variables: the current Delve run, kept so a /reload
 -- mid-run keeps the numbers. known = [guid] = "seen" | "missing" | "gone";
 -- pos = [guid] = { x, y } last known map position; collected = number of
--- "gone"; xp = companion experience gained during the run as a percentage of
--- a level (gains too small to show as 0.1% are left out, so kill credit does
--- not creep in); instanceID is the instance map ID, a sanity check only
+-- "gone"; xp and journey = companion experience and Delver's Journey progress
+-- gained during the run, each as a percentage of a level (gains too small to
+-- show as 0.1% are left out, so kill credit does not creep in); instanceID is the instance map ID, a sanity check only
 -- (copies of the same Delve share it), so a saved run is also ended on any
 -- real login: it survives a /reload and nothing else.
 local CHAR_DEFAULTS = {
-    run = { active = false, instanceID = 0, known = {}, pos = {}, collected = 0, xp = 0 },
+    run = { active = false, instanceID = 0, known = {}, pos = {}, collected = 0, xp = 0, journey = 0 },
 }
 
 local db, cdb
@@ -71,8 +72,8 @@ local lastPresent = {}
 -- Session evidence of having been close to a curiosity: it was named at last
 -- sight, or TomTom dropped our pin on it (clear distance reached).
 local named, reached = {}, {}
--- Companion standing at the last UPDATE_FACTION, so a gain can be measured.
-local lastCompanion
+-- Delver's Journey major faction ID, found once per session.
+local journeyFactionID
 -- Widget frame -> our overlay font string (weak keys: frames may be released).
 local overlays = setmetatable({}, { __mode = "k" })
 local widgetScanPending = false
@@ -145,9 +146,48 @@ local function CompanionProgress()
         name = name:match("^(%S+)") or name, -- first name only: "Valeera"
         level = ranks.currentLevel or 0,
         maxLevel = ranks.maxLevel or 0,
-        standing = rep.standing,
         into = rep.standing - floor,
         span = rep.nextThreshold and (rep.nextThreshold - floor) or nil, -- nil at max level
+    }
+end
+
+-- Delver's Journey is a "major faction" shown as a journey with the Delve
+-- reward track (Blizzard_Journeys reads it the same way). Same shape as
+-- CompanionProgress; nil when the client cannot say.
+local function FindJourneyFaction()
+    if not (C_MajorFactions and C_MajorFactions.GetMajorFactionIDs and C_MajorFactions.GetMajorFactionData) then
+        return nil
+    end
+    local ids = C_MajorFactions.GetMajorFactionIDs(LE_EXPANSION_LEVEL_CURRENT) or {}
+    local fallback
+    for _, id in ipairs(ids) do
+        if C_MajorFactions.ShouldUseJourneyRewardTrack and C_MajorFactions.ShouldUseJourneyRewardTrack(id) then
+            return id
+        end
+        if not fallback and C_MajorFactions.ShouldDisplayMajorFactionAsJourney
+                and C_MajorFactions.ShouldDisplayMajorFactionAsJourney(id) then
+            fallback = id
+        end
+    end
+    return fallback
+end
+
+local function JourneyProgress()
+    journeyFactionID = journeyFactionID or FindJourneyFaction()
+    if not journeyFactionID or not (C_MajorFactions and C_MajorFactions.GetMajorFactionData) then
+        return nil
+    end
+    local data = C_MajorFactions.GetMajorFactionData(journeyFactionID)
+    if not data or data.isUnlocked == false or not data.renownLevelThreshold then
+        return nil
+    end
+    local atMax = data.maxLevel and data.maxLevel > 0 and data.renownLevel >= data.maxLevel
+    return {
+        name = "Journey",
+        level = data.renownLevel or 0,
+        maxLevel = data.maxLevel or 0,
+        into = data.renownReputationEarned or 0,
+        span = (not atMax) and data.renownLevelThreshold or nil,
     }
 end
 
@@ -160,47 +200,59 @@ end
 
 local RefreshCounter -- defined with the counter below
 
+-- The two progress tracks, each read on UPDATE_FACTION and compared with
+-- the previous reading: setting = the chat line's switch, run = the run
+-- total's key, last = the previous reading.
+local TRACKS = {
+    { setting = "companion", run = "xp", read = CompanionProgress, what = "companion progress" },
+    { setting = "journey", run = "journey", read = JourneyProgress, what = "Delver's Journey progress" },
+}
+
 -- Adds a gain to the run's running total (the counter shows it) when a run
 -- is active. Level-ups count the rest of the old level plus the way into
 -- the new one.
-local function RecordRunGain(pct)
+local function RecordRunGain(track, pct)
     if cdb.run.active and pct >= 0.05 then
-        cdb.run.xp = cdb.run.xp + pct
+        cdb.run[track.run] = cdb.run[track.run] + pct
         RefreshCounter()
     end
 end
 
--- Called on UPDATE_FACTION: if the companion's standing rose, add it to the
--- run and (when the chat line is on) say what the gain was worth as a share
--- of the level and how many more like it reach the next level.
-local function CheckCompanion()
-    local now = CompanionProgress()
-    local before = lastCompanion
-    lastCompanion = now
+-- If the track's progress rose, add it to the run and (when its chat line
+-- is on) say what the gain was worth as a share of the level and how many
+-- more like it reach the next level.
+local function CheckTrack(track)
+    local now = track.read()
+    local before = track.last
+    track.last = now
     if not now or not before then
         return
     end
-    local gain = now.standing - before.standing
-    if gain <= 0 then
-        return
-    end
+    local say = db[track.setting]
     if now.level ~= before.level then
+        if now.level < before.level then
+            return
+        end
         local rest = before.span and 100 * (before.span - before.into) / before.span or 0
         if now.span then
-            RecordRunGain(rest + 100 * now.into / now.span)
-            if db.companion then
+            RecordRunGain(track, rest + 100 * now.into / now.span)
+            if say then
                 Print(("%s: level up! Level %d, %.1f%% in."):format(now.name, now.level, 100 * now.into / now.span))
             end
         else
-            RecordRunGain(rest)
-            if db.companion then
+            RecordRunGain(track, rest)
+            if say then
                 Print(("%s: level up! Level %d, the maximum."):format(now.name, now.level))
             end
         end
         return
     end
+    local gain = now.into - before.into
+    if gain <= 0 then
+        return
+    end
     if not now.span then
-        if db.companion then
+        if say then
             Print(("%s: already at max level %d."):format(now.name, now.level))
         end
         return
@@ -209,8 +261,8 @@ local function CheckCompanion()
     if pct < 0.05 then
         return -- would print as +0.0%: kill credit, walk-overs; not worth a line
     end
-    RecordRunGain(pct)
-    if not db.companion then
+    RecordRunGain(track, pct)
+    if not say then
         return
     end
     local more = math.ceil((now.span - now.into) / gain)
@@ -221,10 +273,24 @@ local function CheckCompanion()
     end
 end
 
-local function CompanionStatus()
-    local c = CompanionProgress()
+local function CheckTracks()
+    for _, track in ipairs(TRACKS) do
+        CheckTrack(track)
+    end
+end
+
+-- Called on entering the world: the first reading each track is measured
+-- against.
+local function PrimeTracks()
+    for _, track in ipairs(TRACKS) do
+        track.last = track.read()
+    end
+end
+
+local function TrackStatus(track)
+    local c = track.read()
     if not c then
-        return "companion progress unavailable."
+        return track.what .. " unavailable."
     end
     if not c.span then
         return ("%s is level %d, the maximum."):format(c.name, c.level)
@@ -490,14 +556,15 @@ local function CountKnown()
     return n
 end
 
--- "Curiosities 3 / 11", plus "+12.3%" (companion experience gained this run
--- as a share of a level) when that is turned on.
+-- "Curiosities 3 / 11", plus "+12.3%   Journey +2.1%" (companion experience
+-- and Delver's Journey progress gained this run, each as a share of a level)
+-- when that is turned on.
 local function CounterText()
     local text = ("Curiosities %d / %d"):format(cdb.run.collected, CountKnown())
     if not db.counterxp then
         return text
     end
-    return ("%s   +%.1f%%"):format(text, cdb.run.xp)
+    return ("%s   +%.1f%%   Journey +%.1f%%"):format(text, cdb.run.xp, cdb.run.journey)
 end
 
 function RefreshCounter()
@@ -519,7 +586,7 @@ local function CurrentInstanceID()
 end
 
 local function StartRun()
-    cdb.run = { active = true, instanceID = CurrentInstanceID(), known = {}, pos = {}, collected = 0, xp = 0 }
+    cdb.run = { active = true, instanceID = CurrentInstanceID(), known = {}, pos = {}, collected = 0, xp = 0, journey = 0 }
     lastPresent, named, reached = {}, {}, {}
 end
 
@@ -837,8 +904,9 @@ local function Status()
     end
     Print(("enabled %s, counter %s, quiet %s, pins clear at %d yards, %d waypoint(s) active, %s"):format(
         OnOff(db.enabled), OnOff(db.counter), OnOff(db.quiet), db.cleardistance, #LiveWaypoints(), run))
-    Print(("companion line %s, xp on counter %s (+%.1f%% this run), nemesis number %s; %s"):format(
-        OnOff(db.companion), OnOff(db.counterxp), cdb.run.xp, OnOff(db.nemesis), CompanionStatus()))
+    Print(("companion line %s, journey line %s, xp on counter %s (+%.1f%% / journey +%.1f%% this run), nemesis number %s."):format(
+        OnOff(db.companion), OnOff(db.journey), OnOff(db.counterxp), cdb.run.xp, cdb.run.journey, OnOff(db.nemesis)))
+    Print(TrackStatus(TRACKS[1]) .. " " .. TrackStatus(TRACKS[2]))
 end
 
 local function Debug()
@@ -847,6 +915,15 @@ local function Debug()
     Print(("instance '%s' type %s difficulty %s, uiMapID %s, in Delve %s, TomTom %s."):format(
         tostring(name), tostring(instanceType), tostring(difficultyID), tostring(uiMapID),
         tostring(InDelve()), tostring(TomTom ~= nil)))
+    local ids = C_MajorFactions and C_MajorFactions.GetMajorFactionIDs
+        and C_MajorFactions.GetMajorFactionIDs(LE_EXPANSION_LEVEL_CURRENT) or {}
+    local list = {}
+    for i, id in ipairs(ids) do
+        local data = C_MajorFactions.GetMajorFactionData(id)
+        list[i] = ("%d '%s'"):format(id, data and data.name or "?")
+    end
+    Print(("journey faction %s; major factions: %s"):format(tostring(journeyFactionID or FindJourneyFaction()),
+        #list > 0 and table.concat(list, ", ") or "none"))
     local guids = C_VignetteInfo.GetVignettes()
     Print(("%d vignette(s):"):format(#guids))
     for _, guid in ipairs(guids) do
@@ -905,9 +982,9 @@ local function CounterCommand(arg)
     Status()
 end
 
-local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct xp [on|off], /mct companion [on|off], /mct nemesis [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
+local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct xp [on|off], /mct companion [on|off], /mct journey [on|off], /mct nemesis [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
 
-local TOGGLES = { companion = "companion", nemesis = "nemesis", xp = "counterxp" }
+local TOGGLES = { companion = "companion", journey = "journey", nemesis = "nemesis", xp = "counterxp" }
 
 local function SlashHandler(msg)
     local cmd, arg, value = (msg or ""):lower():match("^%s*(%S*)%s*(%S*)%s*(%S*)")
@@ -977,11 +1054,13 @@ local OPTIONS = {
       tooltip = "Say in chat when a curiosity is found: where it is and that a waypoint was set." },
     { key = "companion", label = "Announce companion XP",
       tooltip = "Say in chat when your companion gains experience: what it was worth as a percentage of the level, and how many more like it reach the next." },
+    { key = "journey", label = "Announce Journey progress",
+      tooltip = "Say in chat when your Delver's Journey progresses: what it was worth as a percentage of the level, and how many more like it reach the next." },
     { key = "counter", label = "Show the run counter",
       tooltip = "The movable \"Curiosities collected / known\" box shown inside Delves.",
       apply = function() RefreshCounter() end },
-    { key = "counterxp", label = "Counter shows companion XP",
-      tooltip = "Adds \"+12.3%\": companion experience gained this run, as a share of a level.",
+    { key = "counterxp", label = "Counter shows run totals",
+      tooltip = "Adds \"+12.3%   Journey +2.1%\": companion experience and Delver's Journey progress gained this run, each as a share of a level.",
       apply = function() RefreshCounter() end },
     { key = "nemesis", label = "Groups remaining on tracker",
       tooltip = "Paint the Nemesis Influence \"enemy groups remaining\" number on its Delve tracker icon, so no mouse-over is needed.",
@@ -1089,11 +1168,12 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2)
         self:RegisterEvent("VIGNETTES_UPDATED")
         self:RegisterEvent("VIGNETTE_MINIMAP_UPDATED")
         self:RegisterEvent("UPDATE_FACTION")
+        self:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
         self:RegisterEvent("UPDATE_UI_WIDGET")
         return
     end
-    if event == "UPDATE_FACTION" then
-        CheckCompanion()
+    if event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
+        CheckTracks()
         return
     end
     if event == "UPDATE_UI_WIDGET" then
@@ -1102,7 +1182,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2)
     end
     if event == "PLAYER_ENTERING_WORLD" then
         CheckTomTom()
-        lastCompanion = CompanionProgress()
+        PrimeTracks()
         -- (isInitialLogin, isReloadingUi): a saved run survives a /reload
         -- only. A real login inside a Delve starts over, since the instance
         -- map ID cannot tell one copy of a Delve from another.

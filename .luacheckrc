@@ -38,6 +38,8 @@ read_globals = {
 	"C_DelvesUI",
 	"C_Spell",
 	"C_GossipInfo",
+	"C_MajorFactions",
+	"LE_EXPANSION_LEVEL_CURRENT",
 	"BreakUpLargeNumbers",
 	"Enum",
 

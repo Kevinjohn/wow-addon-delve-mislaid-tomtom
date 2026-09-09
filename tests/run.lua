@@ -28,7 +28,9 @@
 --   * a rise in the companion's friendship standing prints the gain as a
 --     share of the level, handles level-up and max level, and stays quiet
 --     for gains under 0.05%, when turned off, or without companion data;
---     the shown gains add up on the counter for the run,
+--     the shown gains add up on the counter for the run; Delver's Journey
+--     (the major faction with the journey reward track) is tracked the same
+--     way, with its own chat line and run total,
 --   * the Blizzard Settings panel gets one tick box per setting and a
 --     distance drop-down, all live, and its absence is harmless.
 --
@@ -83,6 +85,19 @@ _G.C_GossipInfo = {
 	GetFriendshipReputation = function()
 		return { name = "Valeera Sanguinar", standing = companion.standing,
 			reactionThreshold = companion.reactionThreshold, nextThreshold = companion.nextThreshold }
+	end,
+}
+-- Delver's Journey: a major faction flagged as the journey reward track.
+local journey = { level = 12, earned = 2000, threshold = 5000, maxLevel = 60, unlocked = true }
+_G.LE_EXPANSION_LEVEL_CURRENT = 11
+_G.C_MajorFactions = {
+	GetMajorFactionIDs = function(expansion) check(expansion == 11, "major factions asked for the current expansion"); return { 2600, 2644 } end,
+	ShouldUseJourneyRewardTrack = function(id) return id == 2644 end,
+	ShouldDisplayMajorFactionAsJourney = function(id) return id == 2644 end,
+	GetMajorFactionData = function(id)
+		if id == 2600 then return { name = "Council of Dornogal", isUnlocked = true, renownLevel = 3, maxLevel = 25, renownReputationEarned = 1, renownLevelThreshold = 2500 } end
+		return { name = "Delver's Journey", isUnlocked = journey.unlocked, renownLevel = journey.level, maxLevel = journey.maxLevel,
+			renownReputationEarned = journey.earned, renownLevelThreshold = journey.threshold }
 	end,
 }
 _G.BreakUpLargeNumbers = function(n)
@@ -478,7 +493,7 @@ fire("ZONE_CHANGED_NEW_AREA")
 check(liveCount() == 0 and next(tracked) == nil and counter.shown == false and cdb.run.active == false,
 	"leaving the Delve clears waypoints, hides the counter, ends the run")
 ns.SlashHandler("")
-check(chat[#chat - 2]:find("last run:", 1, true) ~= nil, "status calls a finished run the last run")
+check(chat[#chat - 3]:find("last run:", 1, true) ~= nil, "status calls a finished run the last run")
 world.difficultyID = 208
 world.instanceID = 200
 fire("PLAYER_ENTERING_WORLD")
@@ -509,7 +524,7 @@ end
 check(sawTracked, "debug lists the vignette ID and tracking")
 ns.SlashHandler("")
 check(chat[#chat]:find("usage:", 1, true) ~= nil, "bare /mct prints usage")
-check(chat[#chat - 2]:find("1 waypoint(s) active", 1, true) ~= nil, "status counts live waypoints")
+check(chat[#chat - 3]:find("1 waypoint(s) active", 1, true) ~= nil, "status counts live waypoints")
 
 -- TomTom missing: one warning at login, status says so, counting continues.
 ns.SlashHandler("clear")
@@ -542,7 +557,7 @@ check(tracked[twinA] == pinned and tomtom.adds == addsBefore, "pin dropped at cl
 ns.SlashHandler("distance 12")
 check(db.cleardistance == 12, "/mct distance persists")
 ns.SlashHandler("distance x")
-check(db.cleardistance == 12 and chat[#chat - 2]:find("usage: /mct distance", 1, true) ~= nil, "bad distance is rejected")
+check(db.cleardistance == 12 and chat[#chat - 3]:find("usage: /mct distance", 1, true) ~= nil, "bad distance is rejected")
 ns.SlashHandler("distance 0")
 ns.SlashHandler("clear")
 fire("VIGNETTES_UPDATED")
@@ -596,7 +611,7 @@ companion.standing = companion.standing + 4500
 fire("UPDATE_FACTION")
 check(chat[#chat] == "|cff33ff99Mislaid Curiosity TomTom:|r Valeera: +10.1%, 8 more to level up.",
 	"gain printed as a percentage with the count to level (got " .. chat[#chat] .. ")")
-check(full() == text() .. "   +10.1%", "counter shows the run's companion gain, no name (got " .. full() .. ")")
+check(full() == text() .. "   +10.1%   Journey +0.0%", "counter shows the run's companion gain, no name (got " .. full() .. ")")
 ns.SlashHandler("xp off")
 check(db.counterxp == false and full() == text(), "/mct xp off drops the suffix (got " .. full() .. ")")
 ns.SlashHandler("xp on")
@@ -633,7 +648,7 @@ ns.SlashHandler("")
 check(chat[#chat - 1]:find("Valeera is level 15, the maximum.", 1, true) ~= nil, "status shows companion progress")
 check(cdb.run.xp > 190 and cdb.run.xp < 191 and full():find("   +190.5%", 1, true) ~= nil,
 	"run total sums every shown gain, level-ups included (got " .. full() .. ")")
-check(chat[#chat - 1]:find("xp on counter on (+190.5% this run)", 1, true) ~= nil, "status shows the run total")
+check(chat[#chat - 2]:find("xp on counter on (+190.5% / journey +0.0% this run)", 1, true) ~= nil, "status shows the run totals")
 companion.standing = 500300
 before = #chat
 fire("UPDATE_FACTION")
@@ -644,16 +659,58 @@ ns.SlashHandler("counter reset")
 check(cdb.run.xp == 0 and full():find("   +0.0%", 1, true) ~= nil, "counter reset clears the run total")
 ns.SlashHandler("companion on")
 
--- Options panel: one tick box per setting, a slider for the distance, all
+-- Delver's Journey progress, tracked the same way.
+before = #chat
+journey.earned = 2500
+fire("UPDATE_FACTION")
+check(chat[#chat] == "|cff33ff99Mislaid Curiosity TomTom:|r Journey: +10.0%, 5 more to level up.",
+	"journey gain printed as a percentage (got " .. chat[#chat] .. ")")
+check(full():find("Journey +10.0%", 1, true) ~= nil, "counter shows the run's journey gain (got " .. full() .. ")")
+journey.earned = 2501
+before = #chat
+fire("UPDATE_FACTION")
+check(#chat == before and cdb.run.journey == 10, "tiny journey gains print nothing and add nothing")
+journey.level, journey.earned = 13, 200
+fire("MAJOR_FACTION_RENOWN_LEVEL_CHANGED", 2644, 13, 12)
+check(chat[#chat]:find("Journey: level up! Level 13, 4.0% in.", 1, true) ~= nil, "journey level up reported (got " .. chat[#chat] .. ")")
+check(cdb.run.journey > 63.9 and cdb.run.journey < 64.1, "level up adds the rest of the old level and the way into the new")
+ns.SlashHandler("journey off")
+journey.earned = 1200
+before = #chat
+fire("UPDATE_FACTION")
+check(db.journey == false and #chat == before and cdb.run.journey > 83.9, "/mct journey off silences the line, total still counts")
+ns.SlashHandler("journey on")
+journey.level, journey.earned = 60, 0
+fire("UPDATE_FACTION")
+check(chat[#chat]:find("Journey: level up! Level 60, the maximum.", 1, true) ~= nil, "journey max level (got " .. chat[#chat] .. ")")
+journey.level, journey.earned = 12, 2000
+fire("UPDATE_FACTION")
+ns.SlashHandler("")
+check(chat[#chat - 1]:find("Journey is level 12, 40.0% through it (2,000 / 5,000).", 1, true) ~= nil, "status shows journey progress (got " .. chat[#chat - 1] .. ")")
+ns.SlashHandler("debug")
+local sawJourney = false
+for i = math.max(1, #chat - 40), #chat do
+	if chat[i]:find("journey faction 2644; major factions: 2600 'Council of Dornogal', 2644 'Delver's Journey'", 1, true) then sawJourney = true end
+end
+check(sawJourney, "debug names the journey faction and the candidates")
+do
+	local saved = _G.C_MajorFactions
+	_G.C_MajorFactions = nil
+	ns.SlashHandler("")
+	check(chat[#chat - 1]:find("Delver's Journey progress unavailable", 1, true) ~= nil, "no major faction API: status says so, no error")
+	_G.C_MajorFactions = saved
+end
+
+-- Options panel: one tick box per setting, a drop-down for the distance, all
 -- reading and writing the saved table live.
 local function proxy(key) return settings.proxies["MislaidCuriosityTomTom_" .. key] end
 check(settings.categories[#settings.categories].name == "Mislaid Curiosity TomTom"
 	and settings.categories[#settings.categories].registered, "options category registered under AddOns")
-check(settings.checkboxes == 6 and settings.dropdowns == 1, "six tick boxes and one drop-down")
+check(settings.checkboxes == 7 and settings.dropdowns == 1, "seven tick boxes and one drop-down")
 check(#settings.choices == 3 and settings.choices[1].value == 0 and settings.choices[2].value == 5
 	and settings.choices[3].value == 10 and settings.choices[1].label:find("Off", 1, true) == 1,
 	"drop-down offers off, 5 and 10 yards")
-for _, key in ipairs({ "enabled", "companion", "counter", "counterxp", "nemesis" }) do
+for _, key in ipairs({ "enabled", "companion", "journey", "counter", "counterxp", "nemesis" }) do
 	check(proxy(key) and proxy(key).get() == true, "tick box '" .. key .. "' present and on")
 end
 check(db.quiet == true and proxy("announce").get() == false, "announce box mirrors quiet (still on from above)")

@@ -48,6 +48,10 @@ reach the next level:
 > **Mislaid Curiosity TomTom:** Valeera: +10.1%, 8 more to level up.
 
 Tiny gains that would show as +0.0% (kill credit, walk-overs) print nothing.
+Your Delver's Journey gets the same treatment, read from the same place the
+Adventure Guide's Journeys page reads it:
+
+> **Mislaid Curiosity TomTom:** Journey: +10.0%, 5 more to level up.
 
 The Delve tracker's affix icons only tell you their numbers on mouse-over.
 The Nemesis Influence icon's "enemy groups remaining" count is painted over
@@ -55,11 +59,12 @@ the icon in white instead, so you never need to hover.
 
 A small box near the top of the screen reads, for example:
 
-> **Curiosities 2 / 5   +18.4%**
+> **Curiosities 2 / 5   +18.4%   Journey +6.0%**
 
-That is 2 collected out of 5 the game has revealed so far this run, and the
-companion experience gained during the run as a share of a level (the same
-gains the chat line reports, so kill credit stays out of it). Drag it
+That is 2 collected out of 5 the game has revealed so far this run, then the
+companion experience and the Delver's Journey progress gained during the
+run, each as a share of a level (the same gains the chat lines report, so
+kill credit stays out of it). Drag it
 wherever you like; the position is remembered. It appears when you enter a
 Delve, survives a `/reload`, is kept per character, and starts over on your
 next run or on a fresh login.
@@ -74,8 +79,9 @@ box, and each one takes effect immediately:
 - Set TomTom waypoints
 - Announce found curiosities
 - Announce companion XP
+- Announce Journey progress
 - Show the run counter
-- Counter shows companion XP
+- Counter shows run totals
 - Groups remaining on tracker
 - Pin clear distance: off, 5 yards or 10 yards (drop-down)
 
@@ -105,8 +111,9 @@ Type **`/mct`** (or `/mislaidcuriosity`) in chat.
 | `/mct` | Show current settings and how many waypoints are active. |
 | `/mct on` / `/mct off` | Turn the addon on or off. Off removes its waypoints and hides the counter. |
 | `/mct counter [on\|off]` | Show or hide the counter. `/mct counter reset` restarts this run's numbers. |
-| `/mct xp [on\|off]` | Show or hide the companion experience total on the counter. |
+| `/mct xp [on\|off]` | Show or hide the run totals (companion experience, Journey progress) on the counter. |
 | `/mct companion [on\|off]` | Show or hide the "+x%, n more to level up" line after companion experience. |
+| `/mct journey [on\|off]` | The same line for Delver's Journey progress. |
 | `/mct nemesis [on\|off]` | Show or hide the "groups remaining" number on the tracker icon. |
 | `/mct distance <yards>` | How close you get before TomTom drops the pin. Default 5. `0` keeps the pin until the curiosity is looted. |
 | `/mct quiet [on\|off]` | Hide the "spotted" chat line. |
@@ -142,10 +149,11 @@ simply drops out of range stays known and keeps its waypoint. Party members'
 pickups count only if you were nearby; one looted while far from you keeps
 its waypoint until the run ends or you `/mct clear`.
 
-**Where does the companion percentage come from?**
-The same place the game's own companion window reads it: your companion's
-level is a friendship reputation, and the addon reads the current standing
-and the level's thresholds. It works anywhere, not just in Delves.
+**Where do the companion and Journey percentages come from?**
+The same places the game's own windows read them: your companion's level is
+a friendship reputation, and Delver's Journey is a "major faction" with the
+Delve reward track. The addon reads the current standing and the level's
+thresholds. Both work anywhere, not just in Delves.
 
 **Will it move my TomTom arrow?**
 Only if the arrow was idle. A waypoint you set yourself is never overridden.
