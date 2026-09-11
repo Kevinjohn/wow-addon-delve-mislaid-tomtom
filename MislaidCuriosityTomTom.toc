@@ -9,10 +9,9 @@
 ## SavedVariables: MislaidCuriosityTomTomDB
 ## SavedVariablesPerCharacter: MislaidCuriosityTomTomCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Bag_10
+## X-Curse-Project-ID: 1691536
 
-# To publish to CurseForge / Wago later, create the projects then uncomment
-# and fill these (the packager reads them to upload the build):
-# ## X-Curse-Project-ID: 000000
+# Wago: create the project, then uncomment and fill this in.
 # ## X-Wago-ID: 000000
 
 MislaidCuriosityTomTom.lua
