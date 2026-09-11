@@ -34,16 +34,94 @@ Delve was actually worth. Outside Delves it does nothing at all.
    `World of Warcraft / _retail_ / Interface / AddOns`.
 3. `/reload` or restart, and tick it in the AddOns list.
 
-## Settings
+More detail below: [options](#options), [commands](#commands), [common questions](#common-questions).
 
-Esc > Options > AddOns > **Mislaid Curiosity TomTom** — waypoints, the chat
-lines, the counter and its totals, and how close you get before a pin clears.
-Everything applies immediately.
+---
 
-The same settings live on **`/mct`**: `on`/`off`, `counter`, `xp`, `companion`,
-`journey`, `distance <yards>`, `quiet`, `clear`, `scan`, `id`. Type `/mct` on
-its own for the current state, or `/mct debug` if a curiosity went unmarked —
-that output is what makes it fixable in a bug report.
+## Options
+
+Esc > Options > AddOns > **Mislaid Curiosity TomTom**. Every setting is a tick
+box, and each one takes effect immediately:
+
+- Set TomTom waypoints
+- Announce found curiosities
+- Announce companion XP
+- Announce Journey progress
+- Show the run counter
+- Counter shows run totals
+- Pin clear distance: off, 5 yards or 10 yards (drop-down)
+
+Hover a box for what it does. The same settings are available from the `/mct` command below.
+
+---
+
+## Commands
+
+Type **`/mct`** (or `/mislaidcuriosity`) in chat.
+
+| Command | What it does |
+| --- | --- |
+| `/mct` | Show current settings and how many waypoints are active. |
+| `/mct on` / `/mct off` | Turn the addon on or off. Off removes its waypoints and hides the counter. |
+| `/mct counter [on\|off]` | Show or hide the counter. `/mct counter reset` restarts this run's numbers. |
+| `/mct xp [on\|off]` | Show or hide the run totals (companion experience, Journey progress) on the counter. |
+| `/mct companion [on\|off]` | Show or hide the "+x%, n more to level up" line after companion experience. |
+| `/mct journey [on\|off]` | The same line for Delver's Journey progress. |
+| `/mct distance <yards>` | How close you get before TomTom drops the pin. Default 5. `0` keeps the pin until the curiosity is looted. |
+| `/mct quiet [on\|off]` | Hide the "spotted" chat line. |
+| `/mct clear` | Remove every waypoint the addon has set right now. |
+| `/mct scan` | Re-check for curiosities immediately. |
+| `/mct debug` | Print what the client is reporting. Paste this into a bug report. |
+| `/mct id` | List the marker IDs treated as a Mislaid Curiosity. `/mct id add <n>` / `remove <n>` change the list if a future patch adds a new one. |
+
+Settings are saved account-wide.
+
+---
+
+## Common questions
+
+**Do I need TomTom?**
+For the waypoints, yes. This addon only tells TomTom where to point; TomTom
+draws the arrow and the pins. Without TomTom the addon loads, prints one
+reminder at login, and still shows the counter.
+
+**A curiosity wasn't marked. Why?**
+Either the client didn't know its position yet (walk a little closer), or the
+game gave it a marker ID the addon doesn't know. `/mct debug` shows every
+marker's ID; if the curiosity's row shows an ID the addon doesn't list under
+`/mct id`, add it with `/mct id add <n>` and open an issue so it can be built
+in.
+
+**What exactly does the counter count?**
+"Known" is every curiosity the game has revealed to your client this run,
+including ones too far away to see. "Collected" is every known curiosity the
+game has since flagged as looted, or that disappeared while you were within
+about 40 yards of it (or after your pin on it had already cleared). One that
+simply drops out of range stays known and keeps its waypoint. Party members'
+pickups count only if you were nearby; one looted while far from you keeps
+its waypoint until the run ends or you `/mct clear`.
+
+**Where do the companion and Journey percentages come from?**
+The same places the game's own windows read them: your companion's level is
+a friendship reputation, and Delver's Journey is a "major faction" with the
+Delve reward track. The addon reads the current standing and the level's
+thresholds. Both work anywhere, not just in Delves.
+
+**Will it move my TomTom arrow?**
+Only if the arrow was idle. A waypoint you set yourself is never overridden.
+If several curiosities appear at once and the game can't report your map
+position, the arrow is left alone rather than guessed.
+
+**Does it work outside Delves?**
+No, on purpose. It only acts while the game reports you're in a Delve, and it
+clears its waypoints when you leave.
+
+**Does it message other players or send anything anywhere?**
+No. Everything it shows is visible only to you.
+
+**Will it slow down my game?**
+No. It does a tiny check when the game updates its map markers and otherwise
+sits quietly.
 
 ---
 
