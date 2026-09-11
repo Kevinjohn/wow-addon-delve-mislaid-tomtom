@@ -21,16 +21,14 @@ All notable changes to this project are documented here, following
 - After a companion experience gain, one chat line: the gain as a percentage of
   the level, how many more like it reach the next level, and where the
   companion stands now.
-- The Delve tracker's Nemesis Influence icon shows its "enemy groups
-  remaining" count on the icon itself, no mouse-over needed.
 - Delver's Journey progress gets the same chat line, read from the major
   faction with the Delve reward track (`/mct journey` to hide it).
 - The counter also shows the companion experience and Journey progress gained
   this run, each as a share of a level (`/mct xp` to hide them).
 - Options panel under Esc > Options > AddOns: tick boxes for waypoints, the
-  two chat lines, the counter, the counter's experience total and the tracker
-  number, plus a drop-down for the pin clear distance. All apply live.
-- `/mct` slash command: on/off, `counter`, `xp`, `companion`, `journey`, `nemesis`,
+  two chat lines, the counter and the counter's experience total, plus a
+  drop-down for the pin clear distance. All apply live.
+- `/mct` slash command: on/off, `counter`, `xp`, `companion`, `journey`,
   `distance`, `quiet`, `clear`, `scan`, `debug`, `id`.
 - TomTom is an optional dependency: without it the addon loads, says so once
   at login, and still counts.

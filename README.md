@@ -53,10 +53,6 @@ Adventure Guide's Journeys page reads it:
 
 > **Mislaid Curiosity TomTom:** Journey: +10.0%, 5 more to level up.
 
-The Delve tracker's affix icons only tell you their numbers on mouse-over.
-The Nemesis Influence icon's "enemy groups remaining" count is painted over
-the icon in white instead, so you never need to hover.
-
 A small box near the top of the screen reads, for example:
 
 > **Curiosities 2 / 5   +18.4%   Journey +6.0%**
@@ -82,7 +78,6 @@ box, and each one takes effect immediately:
 - Announce Journey progress
 - Show the run counter
 - Counter shows run totals
-- Groups remaining on tracker
 - Pin clear distance: off, 5 yards or 10 yards (drop-down)
 
 Hover a box for what it does. The same settings are available from the `/mct` command below.
@@ -114,7 +109,6 @@ Type **`/mct`** (or `/mislaidcuriosity`) in chat.
 | `/mct xp [on\|off]` | Show or hide the run totals (companion experience, Journey progress) on the counter. |
 | `/mct companion [on\|off]` | Show or hide the "+x%, n more to level up" line after companion experience. |
 | `/mct journey [on\|off]` | The same line for Delver's Journey progress. |
-| `/mct nemesis [on\|off]` | Show or hide the "groups remaining" number on the tracker icon. |
 | `/mct distance <yards>` | How close you get before TomTom drops the pin. Default 5. `0` keeps the pin until the curiosity is looted. |
 | `/mct quiet [on\|off]` | Hide the "spotted" chat line. |
 | `/mct clear` | Remove every waypoint the addon has set right now. |

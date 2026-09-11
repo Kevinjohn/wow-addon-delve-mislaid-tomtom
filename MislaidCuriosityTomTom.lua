@@ -45,7 +45,6 @@ local DEFAULTS = {
     counterxp = true, -- ... and on it, this run's companion and Delver's Journey gains as a % of a level
     companion = true, -- after a companion experience gain, say what % it was and how many more to level
     journey = true,   -- the same for Delver's Journey progress
-    nemesis = true,   -- paint "groups remaining" in white over the Delve tracker's widget icon
     cleardistance = 5, -- yards from a curiosity at which TomTom drops its pin; 0 = keep until looted
     ids = {},        -- extra vignette IDs, [id] = true
     counterPos = { point = "TOP", relativePoint = "TOP", x = 0, y = -120 },
@@ -74,9 +73,6 @@ local lastPresent = {}
 local named, reached = {}, {}
 -- Delver's Journey major faction ID, found once per session.
 local journeyFactionID
--- Widget frame -> our overlay font string (weak keys: frames may be released).
-local overlays = setmetatable({}, { __mode = "k" })
-local widgetScanPending = false
 -- vignetteGUID -> TomTom waypoint uid we created. Once TomTom drops a pin at
 -- the clear distance the entry stays (uid no longer valid), so the pin is not
 -- re-added while you loot.
@@ -297,251 +293,6 @@ local function TrackStatus(track)
     end
     return ("%s is level %d, %.1f%% through it (%s / %s)."):format(
         c.name, c.level, 100 * c.into / c.span, Thousands(c.into), Thousands(c.span))
-end
-
--- ------------------------------------------------------------ widget overlay
-
--- The Delve tracker shows affixes as UI widget icons whose only readable
--- state is a mouse-over tooltip such as "Enemy groups remaining: 1 / 4".
--- Each widget frame carries widgetID and widgetType; the widget's data comes
--- from the type's visualization-info function (registered in Blizzard's
--- UIWidgetManager), and the tooltip mixin also keeps the text on the frame or
--- one of its children. Whichever yields "n / m", n is painted over the icon
--- in white.
-local WIDGET_SCAN_DELAY = 0.5
-
-local function TooltipRemaining(tooltip)
-    if type(tooltip) ~= "string" then
-        return nil
-    end
-    local last
-    for n in tooltip:gmatch("(%d+)%s*/%s*%d+") do
-        last = n
-    end
-    return last
-end
-
--- First "n / m" found in any string inside a (nested) table, depth-limited.
-local function RatioInTable(t, depth)
-    if type(t) ~= "table" or depth > 3 then
-        return nil
-    end
-    for _, v in pairs(t) do
-        if type(v) == "string" then
-            local n = TooltipRemaining(v)
-            if n then
-                return n, v
-            end
-        elseif type(v) == "table" then
-            local n, text = RatioInTable(v, depth + 1)
-            if n then
-                return n, text
-            end
-        end
-    end
-    return nil
-end
-
-local function WidgetInfo(frame)
-    local registry = UIWidgetManager and UIWidgetManager.widgetVisTypeInfo
-    local typeInfo = registry and registry[frame.widgetType]
-    if typeInfo and type(typeInfo.visInfoDataFunction) == "function" then
-        local ok, info = pcall(typeInfo.visInfoDataFunction, frame.widgetID)
-        if ok then
-            return info
-        end
-    end
-    return nil
-end
-
--- Every tooltip string the tooltip mixin keeps on the frame or any
--- descendant (the Delves header widget holds its affix icons as children,
--- each with its own tooltip).
-local function FrameTooltips(frame, depth, out)
-    out = out or {}
-    if type(frame.tooltip) == "string" and frame.tooltip ~= "" then
-        out[#out + 1] = frame.tooltip
-    end
-    if depth < 5 and frame.GetChildren then
-        for _, child in ipairs({ frame:GetChildren() }) do
-            FrameTooltips(child, depth + 1, out)
-        end
-    end
-    return out
-end
-
--- Descendant frame set up for this spell (UIWidgetBaseSpellTemplate keeps
--- spellID on itself), so the number can sit on the right icon.
-local function SpellChild(frame, spellID, depth)
-    if frame.spellID == spellID then
-        return frame
-    end
-    if depth < 5 and frame.GetChildren then
-        for _, child in ipairs({ frame:GetChildren() }) do
-            local found = SpellChild(child, spellID, depth + 1)
-            if found then
-                return found
-            end
-        end
-    end
-    return nil
-end
-
-local function SpellDescription(spellID)
-    if C_Spell and C_Spell.GetSpellDescription then
-        return C_Spell.GetSpellDescription(spellID)
-    end
-    return nil
-end
-
--- Returns the remaining count, the text it came from, and the frame to
--- paint on (the affix icon when it can be found, else the widget), or nil.
--- Sources, in order: the widget's own data, its affix spells' live
--- descriptions, and any tooltip text kept on the frame or its descendants.
-local function WidgetRemaining(frame)
-    local info = WidgetInfo(frame)
-    local n, text = RatioInTable(info, 0)
-    if n then
-        return n, text, frame
-    end
-    if info and type(info.spells) == "table" then
-        for _, spell in ipairs(info.spells) do
-            local description = spell.spellID and SpellDescription(spell.spellID)
-            n = TooltipRemaining(description)
-            if n then
-                return n, description, SpellChild(frame, spell.spellID, 0) or frame
-            end
-        end
-    end
-    for _, tooltip in ipairs(FrameTooltips(frame, 0)) do
-        n = TooltipRemaining(tooltip)
-        if n then
-            return n, tooltip, frame
-        end
-    end
-    return nil
-end
-
--- Every live UI widget frame, from the widget manager's registry of widget
--- containers (each container keeps widgetFrames[widgetID]). Never
--- EnumerateFrames: with a busy UI that exceeds the script time limit.
-local function CollectContainers(t, depth, out)
-    if type(t) ~= "table" or depth > 2 then
-        return
-    end
-    if type(t.widgetFrames) == "table" then
-        out[t] = true
-        return
-    end
-    for k, v in pairs(t) do
-        if type(k) == "table" and type(k.widgetFrames) == "table" then
-            out[k] = true
-        elseif type(v) == "table" then
-            CollectContainers(v, depth + 1, out)
-        end
-    end
-end
-
-local function WidgetFrames()
-    local list = {}
-    local registry = UIWidgetManager and UIWidgetManager.registeredWidgetContainers
-    local containers = {}
-    CollectContainers(registry, 0, containers)
-    for container in pairs(containers) do
-        for _, frame in pairs(container.widgetFrames) do
-            if type(frame) == "table" and frame.widgetID and frame.widgetType then
-                list[#list + 1] = frame
-            end
-        end
-    end
-    return list
-end
-
-local function OverlayFor(frame)
-    local text = overlays[frame]
-    if not text then
-        text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        text:SetTextColor(1, 1, 1)
-        text:SetShadowColor(0, 0, 0, 1)
-        text:SetShadowOffset(1, -1)
-        overlays[frame] = text
-    end
-    return text
-end
-
-local function UpdateWidgetOverlays()
-    local show = db.enabled and db.nemesis and InDelve()
-    if not show then
-        for _, text in pairs(overlays) do
-            text:Hide()
-        end
-        return
-    end
-    local painted = {}
-    for _, frame in ipairs(WidgetFrames()) do
-        local remaining, _, target = WidgetRemaining(frame)
-        if remaining then
-            local text = OverlayFor(target)
-            text:SetText(remaining)
-            text:Show()
-            painted[target] = true
-        end
-    end
-    for target, text in pairs(overlays) do
-        if not painted[target] then
-            text:Hide()
-        end
-    end
-end
-
-local function Plain(text)
-    return (tostring(text):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("\n", " / "))
-end
-
-local function DebugWidgets()
-    local frames = WidgetFrames()
-    local registry = UIWidgetManager and UIWidgetManager.registeredWidgetContainers
-    Print(("%d widget frame(s) (widget registry %s):"):format(#frames, registry and "present" or "missing"))
-    for _, frame in ipairs(frames) do
-        local info = WidgetInfo(frame)
-        local n, text = WidgetRemaining(frame)
-        local tooltips = FrameTooltips(frame, 0)
-        local infoKeys = {}
-        if info then
-            for k in pairs(info) do
-                infoKeys[#infoKeys + 1] = tostring(k)
-            end
-            table.sort(infoKeys)
-        end
-        Print(("  widget %s type %s shown %s | remaining %s | %d tooltip(s) | info keys: %s"):format(
-            tostring(frame.widgetID), tostring(frame.widgetType), frame:IsShown() and "yes" or "no",
-            tostring(n), #tooltips, info and table.concat(infoKeys, ",") or "none"))
-        if text then
-            Print("    from: " .. Plain(text):sub(1, 120))
-        end
-        if info and type(info.spells) == "table" then
-            for i, spell in ipairs(info.spells) do
-                Print(("    spell %d: id %s | tooltip '%s' | description '%s'"):format(
-                    i, tostring(spell.spellID), Plain(spell.tooltip or ""):sub(1, 60),
-                    Plain(spell.spellID and SpellDescription(spell.spellID) or ""):sub(1, 90)))
-            end
-        end
-        for i = 1, math.min(#tooltips, 6) do
-            Print(("    tooltip %d: %s"):format(i, Plain(tooltips[i]):sub(1, 120)))
-        end
-    end
-end
-
-local function ScheduleWidgetScan()
-    if widgetScanPending then
-        return
-    end
-    widgetScanPending = true
-    C_Timer.After(WIDGET_SCAN_DELAY, function()
-        widgetScanPending = false
-        UpdateWidgetOverlays()
-    end)
 end
 
 -- ------------------------------------------------------------------ counter
@@ -856,7 +607,6 @@ local function Scan()
         end
         ClearAll()
         RefreshCounter()
-        ScheduleWidgetScan()
         return
     end
     if not db.enabled then
@@ -873,7 +623,6 @@ local function Scan()
     if TomTom then
         UpdateWaypoints()
     end
-    ScheduleWidgetScan()
 end
 
 local pending = false
@@ -904,8 +653,8 @@ local function Status()
     end
     Print(("enabled %s, counter %s, quiet %s, pins clear at %d yards, %d waypoint(s) active, %s"):format(
         OnOff(db.enabled), OnOff(db.counter), OnOff(db.quiet), db.cleardistance, #LiveWaypoints(), run))
-    Print(("companion line %s, journey line %s, xp on counter %s (+%.1f%% / journey +%.1f%% this run), nemesis number %s."):format(
-        OnOff(db.companion), OnOff(db.journey), OnOff(db.counterxp), cdb.run.xp, cdb.run.journey, OnOff(db.nemesis)))
+    Print(("companion line %s, journey line %s, xp on counter %s (+%.1f%% / journey +%.1f%% this run)."):format(
+        OnOff(db.companion), OnOff(db.journey), OnOff(db.counterxp), cdb.run.xp, cdb.run.journey))
     Print(TrackStatus(TRACKS[1]) .. " " .. TrackStatus(TRACKS[2]))
 end
 
@@ -942,7 +691,6 @@ local function Debug()
         Print(("  id %s | %s | %s%s"):format(tostring(VignetteID(guid)), what, where,
             tracked[guid] and " | tracked" or (foreign[guid] and " | foreign waypoint" or "")))
     end
-    DebugWidgets()
 end
 
 local function IdCommand(arg, value)
@@ -982,9 +730,9 @@ local function CounterCommand(arg)
     Status()
 end
 
-local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct xp [on|off], /mct companion [on|off], /mct journey [on|off], /mct nemesis [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
+local USAGE = "usage: /mct on|off, /mct counter [on|off|reset], /mct xp [on|off], /mct companion [on|off], /mct journey [on|off], /mct distance <yards>, /mct quiet [on|off], /mct clear, /mct scan, /mct debug, /mct id [add|remove <n>]"
 
-local TOGGLES = { companion = "companion", journey = "journey", nemesis = "nemesis", xp = "counterxp" }
+local TOGGLES = { companion = "companion", journey = "journey", xp = "counterxp" }
 
 local function SlashHandler(msg)
     local cmd, arg, value = (msg or ""):lower():match("^%s*(%S*)%s*(%S*)%s*(%S*)")
@@ -1001,9 +749,7 @@ local function SlashHandler(msg)
         else
             db[key] = not db[key]
         end
-        if cmd == "nemesis" then
-            UpdateWidgetOverlays()
-        elseif cmd == "xp" then
+        if cmd == "xp" then
             RefreshCounter()
         end
         Status()
@@ -1062,9 +808,6 @@ local OPTIONS = {
     { key = "counterxp", label = "Counter shows run totals",
       tooltip = "Adds \"+12.3%   Journey +2.1%\": companion experience and Delver's Journey progress gained this run, each as a share of a level.",
       apply = function() RefreshCounter() end },
-    { key = "nemesis", label = "Groups remaining on tracker",
-      tooltip = "Paint the Nemesis Influence \"enemy groups remaining\" number on its Delve tracker icon, so no mouse-over is needed.",
-      apply = function() UpdateWidgetOverlays() end },
 }
 
 -- "announce" is the panel's view of the stored `quiet` flag.
@@ -1169,15 +912,10 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2)
         self:RegisterEvent("VIGNETTE_MINIMAP_UPDATED")
         self:RegisterEvent("UPDATE_FACTION")
         self:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
-        self:RegisterEvent("UPDATE_UI_WIDGET")
         return
     end
     if event == "UPDATE_FACTION" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
         CheckTracks()
-        return
-    end
-    if event == "UPDATE_UI_WIDGET" then
-        ScheduleWidgetScan()
         return
     end
     if event == "PLAYER_ENTERING_WORLD" then
@@ -1205,7 +943,4 @@ ns.SlashHandler = SlashHandler
 ns.GetTracked = function() return tracked end
 ns.GetForeign = function() return foreign end
 ns.GetCounterFrame = function() return counterFrame end
-ns.GetOverlays = function() return overlays end
-ns.TooltipRemaining = TooltipRemaining
-ns.WidgetRemaining = WidgetRemaining
 ns.frame = frame

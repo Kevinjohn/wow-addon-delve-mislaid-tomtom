@@ -24,7 +24,6 @@ globals = {
 read_globals = {
 	-- Frames and chat
 	"CreateFrame",
-	"UIWidgetManager",
 	"UIParent",
 	"DEFAULT_CHAT_FRAME",
 	"Settings",
@@ -36,7 +35,6 @@ read_globals = {
 	"C_VignetteInfo",
 	"C_Timer",
 	"C_DelvesUI",
-	"C_Spell",
 	"C_GossipInfo",
 	"C_MajorFactions",
 	"LE_EXPANSION_LEVEL_CURRENT",

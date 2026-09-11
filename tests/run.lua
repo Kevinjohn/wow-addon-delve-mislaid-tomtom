@@ -23,8 +23,6 @@
 --   * the run lives in per-character saved variables, is tied to one
 --     instance, and resets on a new one,
 --   * without TomTom it loads, warns once at login, and only counts,
---   * a Delve tracker widget whose tooltip says "n / m" gets n painted over
---     it, updated on widget changes, hidden outside Delves or when off,
 --   * a rise in the companion's friendship standing prints the gain as a
 --     share of the level, handles level-up and max level, and stays quiet
 --     for gains under 0.05%, when turned off, or without companion data;
@@ -138,41 +136,6 @@ local function widget()
 end
 _G.UIParent = widget()
 _G.CreateFrame = function() return widget() end
--- Frames the client would enumerate: a Nemesis widget whose data comes from
--- the widget manager, a widget whose tooltip sits on a child frame, a widget
--- without a ratio, and a plain frame.
-local NEMESIS_TIP = "Nemesis Influence\nThe Nemesis's allies are wandering about the delve.\n\nEnemy groups remaining: 1 / 4"
-local nemesisWidget = widget(); nemesisWidget.widgetID = 6001; nemesisWidget.widgetType = 6
-local childWidget = widget(); childWidget.widgetID = 6003; childWidget.widgetType = 6
-local childIcon = widget(); childIcon.tooltip = "Something else: 2 / 3"
-function childWidget:GetChildren() return childIcon end
-local otherWidget = widget(); otherWidget.widgetID = 6002; otherWidget.widgetType = 6
--- The Delves header: affix spells with empty tooltips whose live description
--- carries the number, and icon children keyed by spellID.
-local headerWidget = widget(); headerWidget.widgetID = 6183; headerWidget.widgetType = 29
-local iconA = widget(); iconA.spellID = 1001
-local iconB = widget(); iconB.spellID = 1002
-function headerWidget:GetChildren() return iconA, iconB end
-local descriptions = { [1001] = "Curiosity buff.", [1002] = "The Nemesis's allies are wandering.\n\nEnemy groups remaining: 3 / 4" }
-_G.C_Spell = { GetSpellDescription = function(id) return descriptions[id] end }
-local plain = widget()
--- Widget containers as the widget manager registers them: one keyed by the
--- container frame, one nested under a set ID, plus a stray non-container.
-local containerA = widget(); containerA.widgetFrames = { [6001] = nemesisWidget, [6002] = otherWidget }
-local containerB = widget(); containerB.widgetFrames = { [6003] = childWidget, [6183] = headerWidget }
-_G.UIWidgetManager = { registeredWidgetContainers = { [containerA] = true, [42] = { [containerB] = true }, [plain] = true },
-widgetVisTypeInfo = {
-	[6] = { visInfoDataFunction = function(id)
-		if id == 6001 then return { spellInfo = { tooltip = NEMESIS_TIP, name = "Nemesis Influence" } } end
-		if id == 6002 then return { spellInfo = { tooltip = "Companion buff" } } end
-		return nil
-	end },
-	[29] = { visInfoDataFunction = function(id)
-		if id == 6183 then return { headerText = "Gnarldor Isle", tooltip = "", tierText = "11",
-			spells = { { spellID = 1001, tooltip = "" }, { spellID = 1002, tooltip = "" } } } end
-		return nil
-	end },
-} }
 
 -- TomTom stub: keyed like the real one (map/x/y/title), returns the existing
 -- uid on a duplicate, records the opts, and models the crazy arrow.
@@ -564,44 +527,6 @@ fire("VIGNETTES_UPDATED")
 check(tomtom.lastOpts.cleardistance == 0 and tracked[twinA], "new pins use the new distance")
 ns.SlashHandler("distance 5")
 
--- Nemesis "groups remaining" overlay.
-local probe2 = {}
-assert(loadfile("MislaidCuriosityTomTom.lua"))("MislaidCuriosityTomTom", probe2)
-check(probe2.TooltipRemaining("Enemy groups remaining: 1 / 4") == "1"
-	and probe2.TooltipRemaining("3/12 done, 0 / 4 left") == "0"
-	and probe2.TooltipRemaining("no ratio here") == nil and probe2.TooltipRemaining(nil) == nil,
-	"tooltip ratio parsing takes the last n / m")
-world.difficultyID = 208
-fire("UPDATE_UI_WIDGET")
-local overlays = ns.GetOverlays()
-check(overlays[nemesisWidget] and overlays[nemesisWidget].shown and overlays[nemesisWidget].textValue == "1",
-	"nemesis widget gets its remaining count painted from widget-manager data")
-check(overlays[childWidget] and overlays[childWidget].textValue == "2", "tooltip on a child frame is found")
-check(overlays[iconB] and overlays[iconB].textValue == "3" and overlays[iconA] == nil and overlays[headerWidget] == nil,
-	"Delves header: number from the spell description, painted on that spell's icon")
-descriptions[1002] = descriptions[1002]:gsub("3 / 4", "2 / 4")
-fire("UPDATE_UI_WIDGET")
-check(overlays[iconB].textValue == "2", "icon overlay follows the live description")
-check(overlays[otherWidget] == nil and overlays[plain] == nil, "other frames untouched")
-NEMESIS_TIP = NEMESIS_TIP:gsub("1 / 4", "0 / 4")
-fire("UPDATE_UI_WIDGET")
-check(overlays[nemesisWidget].textValue == "0", "overlay follows the tooltip")
-ns.SlashHandler("debug")
-local sawWidget = false
-for i = math.max(1, #chat - 30), #chat do
-	if chat[i]:find("widget 6001", 1, true) and chat[i]:find("remaining 0", 1, true) then sawWidget = true end
-end
-check(sawWidget, "debug lists widgets with their remaining count")
-ns.SlashHandler("nemesis off")
-check(db.nemesis == false and overlays[nemesisWidget].shown == false, "/mct nemesis off hides it")
-ns.SlashHandler("nemesis on")
-check(overlays[nemesisWidget].shown == true, "/mct nemesis on shows it again")
-world.difficultyID = 0
-fire("ZONE_CHANGED_NEW_AREA")
-check(overlays[nemesisWidget].shown == false, "hidden outside a Delve")
-world.difficultyID = 208
-fire("PLAYER_ENTERING_WORLD")
-
 -- Companion experience line.
 fire("PLAYER_ENTERING_WORLD") -- primes the last-known standing
 before = #chat
@@ -706,11 +631,11 @@ end
 local function proxy(key) return settings.proxies["MislaidCuriosityTomTom_" .. key] end
 check(settings.categories[#settings.categories].name == "Mislaid Curiosity TomTom"
 	and settings.categories[#settings.categories].registered, "options category registered under AddOns")
-check(settings.checkboxes == 7 and settings.dropdowns == 1, "seven tick boxes and one drop-down")
+check(settings.checkboxes == 6 and settings.dropdowns == 1, "six tick boxes and one drop-down")
 check(#settings.choices == 3 and settings.choices[1].value == 0 and settings.choices[2].value == 5
 	and settings.choices[3].value == 10 and settings.choices[1].label:find("Off", 1, true) == 1,
 	"drop-down offers off, 5 and 10 yards")
-for _, key in ipairs({ "enabled", "companion", "journey", "counter", "counterxp", "nemesis" }) do
+for _, key in ipairs({ "enabled", "companion", "journey", "counter", "counterxp" }) do
 	check(proxy(key) and proxy(key).get() == true, "tick box '" .. key .. "' present and on")
 end
 check(db.quiet == true and proxy("announce").get() == false, "announce box mirrors quiet (still on from above)")
@@ -738,9 +663,6 @@ proxy("enabled").set(false)
 check(db.enabled == false and counter.shown == false and liveCount() == 0, "unticking the addon clears waypoints and hides the counter")
 proxy("enabled").set(true)
 check(counter.shown == true, "ticking the addon back restores the counter")
-proxy("nemesis").set(false)
-check(db.nemesis == false and overlays[nemesisWidget].shown == false, "unticking nemesis hides the number")
-proxy("nemesis").set(true)
 check(proxy("cleardistance").get() == 5, "drop-down reads the clear distance")
 proxy("cleardistance").set(10)
 check(db.cleardistance == 10, "drop-down writes the chosen distance")
