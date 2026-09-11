@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+# Tracked pre-commit hook. Git never installs a tracked hook on its own, so a
+# fresh clone activates it once with:
+#
+#   git config core.hooksPath hooks
+#
+# It runs scripts/check.sh (luacheck, when installed, plus the behaviour
+# harness) and aborts the commit if anything fails. `git commit --no-verify`
+# skips it.
+set -e
+
+root=$(git rev-parse --show-toplevel)
+
+if ! sh "$root/scripts/check.sh"; then
+	echo >&2
+	echo "pre-commit: checks failed, commit aborted (use --no-verify to override)." >&2
+	exit 1
+fi

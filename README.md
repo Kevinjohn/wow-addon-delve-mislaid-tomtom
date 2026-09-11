@@ -167,6 +167,12 @@ sits quietly.
 
 ---
 
+**Working on the addon?** After cloning, run `git config core.hooksPath hooks`
+once. Git won't install a tracked hook itself, and that one command turns on
+`hooks/pre-commit`, which runs `scripts/check.sh` (luacheck and the behaviour
+harness) before each commit and aborts on failure — `git commit --no-verify`
+overrides it.
+
 **Contributing:** bug reports and pull requests are welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md). Released under the [MIT License](LICENSE).
 

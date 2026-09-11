@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 # Run the same checks locally that you'd want green before committing:
-#   * luacheck over the addon (config in .luacheckrc; tests are excluded there)
+#   * luacheck over the addon (config in .luacheckrc; tests are excluded
+#     there), skipped with a note when luacheck isn't installed
 #   * the behaviour harness in tests/run.lua
 #
 # Usage:  sh scripts/check.sh   (from the repo root, or anywhere)
@@ -8,8 +9,12 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "==> luacheck"
-luacheck *.lua
+if command -v luacheck >/dev/null 2>&1; then
+	echo "==> luacheck"
+	luacheck *.lua
+else
+	echo "==> luacheck (skipped: not installed)"
+fi
 
 # The tests target Lua 5.1 syntax, so any 5.1+ interpreter works — including
 # LuaJIT. Use the first one we find.

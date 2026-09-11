@@ -23,10 +23,20 @@ The addon is a single file, `MislaidCuriosityTomTom.lua`, plus its `.toc`.
 Symlink the repo into your AddOns folder as `MislaidCuriosityTomTom` and
 `/reload` to pick up changes. TomTom must be installed.
 
+After cloning, switch on the tracked hooks once:
+
+```sh
+git config core.hooksPath hooks
+```
+
+`hooks/pre-commit` then runs `scripts/check.sh` before every commit and aborts
+the commit if it fails. `git commit --no-verify` overrides it.
+
 ## Before opening a pull request
 
-Run the checks locally — they need a Lua 5.1+ interpreter (LuaJIT is fine) and
-`luacheck` on your `PATH`:
+Run the checks locally — they need a Lua 5.1+ interpreter (LuaJIT is fine);
+`luacheck` is used when it's on your `PATH` and skipped with a note when it
+isn't:
 
 ```sh
 sh scripts/check.sh
