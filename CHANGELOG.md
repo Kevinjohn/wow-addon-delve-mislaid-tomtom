@@ -36,3 +36,6 @@ All notable changes to this project are documented here, following
   `.luacheckrc`, `scripts/check.sh` and `scripts/release.sh`, a behaviour test
   harness (`tests/run.lua`), community-health docs, and a GitHub Actions
   release workflow.
+- Tracked `hooks/pre-commit` runs `scripts/check.sh` and aborts a failing
+  commit; a clone turns it on with `git config core.hooksPath hooks`.
+  `scripts/check.sh` skips luacheck with a note when it is not installed.
